@@ -15,9 +15,10 @@ A web-based simulator that visualizes **Shortest Remaining Time First (SRTF)** C
 6. [Getting Started](#getting-started)
 7. [How to Use](#how-to-use)
 8. [Branches](#branches)
-9. [Scope and Limitations](#scope-and-limitations)
-10. [Project Status](#project-status)
-11. [References](#references)
+9. [Git Workflow](#git-workflow)
+10. [Scope and Limitations](#scope-and-limitations)
+11. [Project Status](#project-status)
+12. [References](#references)
 
 ---
 
@@ -151,6 +152,31 @@ Then open **http://127.0.0.1:5000** in a web browser.
 | `frontend` | Web interface and animation (everything in `static/`). |
 
 Work is done on `backend` or `frontend` and merged into `main` when it works. The JSON format exchanged between the two sides is defined in [`docs/INTERFACE_CONTRACT.md`](docs/INTERFACE_CONTRACT.md); frontend setup and responsibilities are in [`docs/FRONTEND_GUIDE.md`](docs/FRONTEND_GUIDE.md).
+
+## Git Workflow
+
+Commands are for **Git Bash**. The example uses the `frontend` branch; the backend developer uses the same commands with `backend`.
+
+### Every work session
+
+```bash
+git checkout frontend
+git pull origin frontend           # get the other member's latest work first
+# ... work on your own files ...
+git add .
+git commit -m "Describe what changed"
+git pull origin frontend           # again, in case the partner pushed meanwhile
+git push origin frontend
+```
+
+### Rules
+
+- Pull before you start, and pull again before you push.
+- Edit only your own files.
+- Never commit the `.venv` folder.
+- Commit small and often, and push at the end of every work session.
+- If a push is rejected, run `git pull origin frontend` and push again.
+- Only Furina merges into `main`.
 
 ## Scope and Limitations
 
