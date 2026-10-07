@@ -14,9 +14,10 @@ A web-based simulator that visualizes **Shortest Remaining Time First (SRTF)** C
 5. [Project Structure](#project-structure)
 6. [Getting Started](#getting-started)
 7. [How to Use](#how-to-use)
-8. [Scope and Limitations](#scope-and-limitations)
-9. [Project Status](#project-status)
-10. [References](#references)
+8. [Branches](#branches)
+9. [Scope and Limitations](#scope-and-limitations)
+10. [Project Status](#project-status)
+11. [References](#references)
 
 ---
 
@@ -85,11 +86,12 @@ srtf-simulator/
 │   └── js/
 │       ├── player.js       # playback controller
 │       ├── gantt.js        # Gantt chart drawing
+│       ├── ui.js           # CPU panel, ready queue, event log, results table
 │       ├── main.js         # Run button and wiring
 │       └── input.js        # input form and browser validation
 ├── docs/
 │   ├── INTERFACE_CONTRACT.md   # JSON agreement between Python and browser
-│   ├── TEAM_PLAN.md            # full project plan
+│   ├── FRONTEND_GUIDE.md       # guide for the frontend developers
 │   ├── document/               # written document
 │   ├── manual/                 # user manual
 │   ├── slides/                 # presentation slides
@@ -111,10 +113,13 @@ srtf-simulator/
 git clone https://github.com/Furina-star/srtf-simulator
 cd srtf-simulator
 
-# create and activate a virtual environment
+# create a virtual environment
 python -m venv .venv
-# Windows (PowerShell):  .venv\Scripts\Activate.ps1
-# macOS/Linux:           source .venv/bin/activate
+
+# activate it (use the line that matches your terminal)
+source .venv/Scripts/activate      # Git Bash on Windows
+.venv\Scripts\Activate.ps1         # Windows PowerShell
+source .venv/bin/activate          # macOS / Linux
 
 pip install -r requirements.txt
 ```
@@ -137,6 +142,16 @@ Then open **http://127.0.0.1:5000** in a web browser.
 
 *(A full user manual with screenshots will be added in `docs/manual/`.)*
 
+## Branches
+
+| Branch | Purpose |
+|---|---|
+| `main` | Stable, working version. Only finished work is merged here. |
+| `backend` | Python engine and Flask server (`app.py`, `engine.py`). |
+| `frontend` | Web interface and animation (everything in `static/`). |
+
+Work is done on `backend` or `frontend` and merged into `main` when it works. The JSON format exchanged between the two sides is defined in [`docs/INTERFACE_CONTRACT.md`](docs/INTERFACE_CONTRACT.md); frontend setup and responsibilities are in [`docs/FRONTEND_GUIDE.md`](docs/FRONTEND_GUIDE.md).
+
 ## Scope and Limitations
 
 **Scope:** single CPU; integer arrival and burst times; no I/O bursts; no priorities; zero context-switch cost; one simulation at a time; runs locally in a web browser.
@@ -145,14 +160,15 @@ Then open **http://127.0.0.1:5000** in a web browser.
 
 ## Project Status
 
-- [ ] Repository and project structure
-- [ ] Interface contract drafted (`docs/INTERFACE_CONTRACT.md`)
+- [x] Repository and project structure
+- [x] Interface contract drafted (`docs/INTERFACE_CONTRACT.md`)
+- [x] Sample result file for frontend development (`static/sample_result.json`)
 - [ ] SRTF engine
 - [ ] Flask server and validation
 - [ ] Frontend layout
 - [ ] Gantt animation and playback controls
 - [ ] Input form and browser-side validation
-- [ ] Test cases and automated tests
+- [ ] Manual testing against the expected-results table
 - [ ] Written document (title page, introduction, references)
 - [ ] User manual
 - [ ] Presentation slides

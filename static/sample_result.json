@@ -1,1 +1,470 @@
-{}
+{
+  "steps": [
+    {
+      "time": 0,
+      "running": "P1",
+      "ready": [],
+      "remaining": {
+        "P1": 8,
+        "P2": 4,
+        "P3": 9,
+        "P4": 5
+      },
+      "events": [
+        {
+          "type": "arrival",
+          "pid": "P1",
+          "text": "P1 arrived"
+        }
+      ]
+    },
+    {
+      "time": 1,
+      "running": "P2",
+      "ready": [
+        "P1"
+      ],
+      "remaining": {
+        "P1": 7,
+        "P2": 4,
+        "P3": 9,
+        "P4": 5
+      },
+      "events": [
+        {
+          "type": "arrival",
+          "pid": "P2",
+          "text": "P2 arrived"
+        },
+        {
+          "type": "preempt",
+          "pid": "P1",
+          "by": "P2",
+          "text": "P1 preempted by P2"
+        }
+      ]
+    },
+    {
+      "time": 2,
+      "running": "P2",
+      "ready": [
+        "P1",
+        "P3"
+      ],
+      "remaining": {
+        "P1": 7,
+        "P2": 3,
+        "P3": 9,
+        "P4": 5
+      },
+      "events": [
+        {
+          "type": "arrival",
+          "pid": "P3",
+          "text": "P3 arrived"
+        }
+      ]
+    },
+    {
+      "time": 3,
+      "running": "P2",
+      "ready": [
+        "P4",
+        "P1",
+        "P3"
+      ],
+      "remaining": {
+        "P1": 7,
+        "P2": 2,
+        "P3": 9,
+        "P4": 5
+      },
+      "events": [
+        {
+          "type": "arrival",
+          "pid": "P4",
+          "text": "P4 arrived"
+        }
+      ]
+    },
+    {
+      "time": 4,
+      "running": "P2",
+      "ready": [
+        "P4",
+        "P1",
+        "P3"
+      ],
+      "remaining": {
+        "P1": 7,
+        "P2": 1,
+        "P3": 9,
+        "P4": 5
+      },
+      "events": [
+        {
+          "type": "complete",
+          "pid": "P2",
+          "text": "P2 completed"
+        }
+      ]
+    },
+    {
+      "time": 5,
+      "running": "P4",
+      "ready": [
+        "P1",
+        "P3"
+      ],
+      "remaining": {
+        "P1": 7,
+        "P2": 0,
+        "P3": 9,
+        "P4": 5
+      },
+      "events": []
+    },
+    {
+      "time": 6,
+      "running": "P4",
+      "ready": [
+        "P1",
+        "P3"
+      ],
+      "remaining": {
+        "P1": 7,
+        "P2": 0,
+        "P3": 9,
+        "P4": 4
+      },
+      "events": []
+    },
+    {
+      "time": 7,
+      "running": "P4",
+      "ready": [
+        "P1",
+        "P3"
+      ],
+      "remaining": {
+        "P1": 7,
+        "P2": 0,
+        "P3": 9,
+        "P4": 3
+      },
+      "events": []
+    },
+    {
+      "time": 8,
+      "running": "P4",
+      "ready": [
+        "P1",
+        "P3"
+      ],
+      "remaining": {
+        "P1": 7,
+        "P2": 0,
+        "P3": 9,
+        "P4": 2
+      },
+      "events": []
+    },
+    {
+      "time": 9,
+      "running": "P4",
+      "ready": [
+        "P1",
+        "P3"
+      ],
+      "remaining": {
+        "P1": 7,
+        "P2": 0,
+        "P3": 9,
+        "P4": 1
+      },
+      "events": [
+        {
+          "type": "complete",
+          "pid": "P4",
+          "text": "P4 completed"
+        }
+      ]
+    },
+    {
+      "time": 10,
+      "running": "P1",
+      "ready": [
+        "P3"
+      ],
+      "remaining": {
+        "P1": 7,
+        "P2": 0,
+        "P3": 9,
+        "P4": 0
+      },
+      "events": []
+    },
+    {
+      "time": 11,
+      "running": "P1",
+      "ready": [
+        "P3"
+      ],
+      "remaining": {
+        "P1": 6,
+        "P2": 0,
+        "P3": 9,
+        "P4": 0
+      },
+      "events": []
+    },
+    {
+      "time": 12,
+      "running": "P1",
+      "ready": [
+        "P3"
+      ],
+      "remaining": {
+        "P1": 5,
+        "P2": 0,
+        "P3": 9,
+        "P4": 0
+      },
+      "events": []
+    },
+    {
+      "time": 13,
+      "running": "P1",
+      "ready": [
+        "P3"
+      ],
+      "remaining": {
+        "P1": 4,
+        "P2": 0,
+        "P3": 9,
+        "P4": 0
+      },
+      "events": []
+    },
+    {
+      "time": 14,
+      "running": "P1",
+      "ready": [
+        "P3"
+      ],
+      "remaining": {
+        "P1": 3,
+        "P2": 0,
+        "P3": 9,
+        "P4": 0
+      },
+      "events": []
+    },
+    {
+      "time": 15,
+      "running": "P1",
+      "ready": [
+        "P3"
+      ],
+      "remaining": {
+        "P1": 2,
+        "P2": 0,
+        "P3": 9,
+        "P4": 0
+      },
+      "events": []
+    },
+    {
+      "time": 16,
+      "running": "P1",
+      "ready": [
+        "P3"
+      ],
+      "remaining": {
+        "P1": 1,
+        "P2": 0,
+        "P3": 9,
+        "P4": 0
+      },
+      "events": [
+        {
+          "type": "complete",
+          "pid": "P1",
+          "text": "P1 completed"
+        }
+      ]
+    },
+    {
+      "time": 17,
+      "running": "P3",
+      "ready": [],
+      "remaining": {
+        "P1": 0,
+        "P2": 0,
+        "P3": 9,
+        "P4": 0
+      },
+      "events": []
+    },
+    {
+      "time": 18,
+      "running": "P3",
+      "ready": [],
+      "remaining": {
+        "P1": 0,
+        "P2": 0,
+        "P3": 8,
+        "P4": 0
+      },
+      "events": []
+    },
+    {
+      "time": 19,
+      "running": "P3",
+      "ready": [],
+      "remaining": {
+        "P1": 0,
+        "P2": 0,
+        "P3": 7,
+        "P4": 0
+      },
+      "events": []
+    },
+    {
+      "time": 20,
+      "running": "P3",
+      "ready": [],
+      "remaining": {
+        "P1": 0,
+        "P2": 0,
+        "P3": 6,
+        "P4": 0
+      },
+      "events": []
+    },
+    {
+      "time": 21,
+      "running": "P3",
+      "ready": [],
+      "remaining": {
+        "P1": 0,
+        "P2": 0,
+        "P3": 5,
+        "P4": 0
+      },
+      "events": []
+    },
+    {
+      "time": 22,
+      "running": "P3",
+      "ready": [],
+      "remaining": {
+        "P1": 0,
+        "P2": 0,
+        "P3": 4,
+        "P4": 0
+      },
+      "events": []
+    },
+    {
+      "time": 23,
+      "running": "P3",
+      "ready": [],
+      "remaining": {
+        "P1": 0,
+        "P2": 0,
+        "P3": 3,
+        "P4": 0
+      },
+      "events": []
+    },
+    {
+      "time": 24,
+      "running": "P3",
+      "ready": [],
+      "remaining": {
+        "P1": 0,
+        "P2": 0,
+        "P3": 2,
+        "P4": 0
+      },
+      "events": []
+    },
+    {
+      "time": 25,
+      "running": "P3",
+      "ready": [],
+      "remaining": {
+        "P1": 0,
+        "P2": 0,
+        "P3": 1,
+        "P4": 0
+      },
+      "events": [
+        {
+          "type": "complete",
+          "pid": "P3",
+          "text": "P3 completed"
+        }
+      ]
+    }
+  ],
+  "gantt": [
+    {
+      "pid": "P1",
+      "start": 0,
+      "end": 1
+    },
+    {
+      "pid": "P2",
+      "start": 1,
+      "end": 5
+    },
+    {
+      "pid": "P4",
+      "start": 5,
+      "end": 10
+    },
+    {
+      "pid": "P1",
+      "start": 10,
+      "end": 17
+    },
+    {
+      "pid": "P3",
+      "start": 17,
+      "end": 26
+    }
+  ],
+  "metrics": {
+    "P1": {
+      "completion": 17,
+      "turnaround": 17,
+      "waiting": 9,
+      "response": 0
+    },
+    "P2": {
+      "completion": 5,
+      "turnaround": 4,
+      "waiting": 0,
+      "response": 0
+    },
+    "P3": {
+      "completion": 26,
+      "turnaround": 24,
+      "waiting": 15,
+      "response": 15
+    },
+    "P4": {
+      "completion": 10,
+      "turnaround": 7,
+      "waiting": 2,
+      "response": 2
+    }
+  },
+  "averages": {
+    "turnaround": 13.0,
+    "waiting": 6.5,
+    "response": 4.25
+  }
+}
