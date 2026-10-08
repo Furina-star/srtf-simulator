@@ -1,1 +1,2 @@
 Flask
+pytest>=8,<10

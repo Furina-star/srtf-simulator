@@ -8,6 +8,12 @@ from engine import srtf
 # /simulate accepts JSON only; form submissions are rejected and CORS is not enabled.
 # Revisit token protection if authenticated or state-changing routes are added.
 app = Flask(__name__, static_folder="static", static_url_path="/static")  # NOSONAR(S4502)
+app.config["MAX_CONTENT_LENGTH"] = 16 * 1024
+
+
+@app.errorhandler(413)
+def request_too_large(error):
+    return jsonify({"error": "Request body is too large (maximum 16 KB)."}), 413
 
 
 @app.route("/", methods=["GET"])

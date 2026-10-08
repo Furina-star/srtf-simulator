@@ -3,6 +3,7 @@
 from typing import TypedDict
 
 MAX_PROCESSES = 15
+MAX_PID_LENGTH = 32
 MAX_SIMULATION_STEPS = 10_000
 
 
@@ -15,11 +16,12 @@ class Process(TypedDict):
 
 
 class Event(TypedDict, total=False):
-    """A timeline announcement; only preemption events include 'by'."""
+    """A timeline announcement, with its actual occurrence time in `at`."""
 
     type: str
     pid: str | None
     text: str
+    at: int
     by: str
 
 
@@ -63,6 +65,9 @@ def _validate_process(process: object, index: int, seen: set[str]) -> Process:
     # PIDs must identify one process, rather than overwrite an earlier entry.
     if not isinstance(pid, str) or not pid.strip():
         raise ValueError(f"Process {index} must have a non-empty PID.")
+    pid = pid.strip()
+    if len(pid) > MAX_PID_LENGTH:
+        raise ValueError(f"PID must have no more than {MAX_PID_LENGTH} characters.")
     if pid in seen:
         raise ValueError(f"Duplicate PID: {pid}.")
 
@@ -105,6 +110,7 @@ def _record_preemption(
     running: str | None,
     current: str,
     remaining: dict[str, int],
+    time: int,
 ) -> None:
     """Announce a switch only when the previous process was interrupted."""
     # The first run or a run after idle time has no previous process to interrupt.
@@ -117,6 +123,7 @@ def _record_preemption(
     if previous != current and remaining[previous] > 0:
         events.append({
             "type": "preempt",
+            "at": time,
             "pid": previous,
             "by": current,
             "text": f"{previous} preempted by {current}",
@@ -160,7 +167,8 @@ def _simulate(
     for process in processes:
         process_id = process["pid"]
         arrival_event: Event = {
-            "type": "arrival", "pid": process_id, "text": f"{process_id} arrived",
+            "type": "arrival", "at": process["arrival"],
+            "pid": process_id, "text": f"{process_id} arrived",
         }
         arrivals_by_time.setdefault(process["arrival"], []).append(arrival_event)
 
@@ -188,7 +196,7 @@ def _simulate(
 
         # Preserve idle ticks for animation and clear the previous CPU owner.
         if not ready:
-            events.append({"type": "idle", "pid": None, "text": "CPU idle"})
+            events.append({"type": "idle", "at": time, "pid": None, "text": "CPU idle"})
             steps.append(_make_step(time, "IDLE", ready, remaining, arrival, events))
             running = None
             time += 1
@@ -201,7 +209,7 @@ def _simulate(
                 remaining[pid], 0 if pid == previous else 1, arrival[pid], pid
             ),
         )
-        _record_preemption(events, running, current, remaining)
+        _record_preemption(events, running, current, remaining, time)
         steps.append(_make_step(time, current, ready, remaining, arrival, events))
 
         # setdefault preserves the first start when a preempted process resumes.
@@ -215,6 +223,7 @@ def _simulate(
             completion[current] = time
             events.append({
                 "type": "complete",
+                "at": time,
                 "pid": current,
                 "text": f"{current} completed",
             })
