@@ -77,7 +77,12 @@ Expected averages: **WT = 6.5, TAT = 13.0**.
 srtf-simulator/
 ├── app.py                  # Flask server and validation
 ├── engine.py               # SRTF engine (pure Python)
-├── requirements.txt        # Python dependencies
+├── requirements.txt        # Runtime dependencies (Flask)
+├── requirements-dev.txt    # Development and test dependencies (pytest)
+├── pytest.ini              # Makes plain pytest find engine.py
+├── tests/
+│   ├── test_engine.py      # Scheduling and validation tests
+│   └── test_app.py         # Flask endpoint tests
 ├── static/
 │   ├── index.html          # page structure
 │   ├── sample_result.json  # worked-example result for frontend development
@@ -125,6 +130,14 @@ source .venv/bin/activate          # macOS / Linux
 pip install -r requirements.txt
 ```
 
+To run automated tests, install the development dependencies (including `pytest`):
+
+```bash
+pip install -r requirements-dev.txt
+```
+
+`requirements-dev.txt` includes the normal application dependencies, so you can also install only that file when developing.
+
 ### Run
 
 ```bash
@@ -132,6 +145,16 @@ python app.py
 ```
 
 Then open **http://127.0.0.1:5000** in a web browser.
+
+### Run Tests
+
+From the repository root (the directory containing `pytest.ini`), run:
+
+```bash
+pytest
+```
+
+`python -m pytest` also works. The `pytest.ini` file adds the repository root to the module search path, so both commands can import `engine.py`.
 
 ## How to Use
 
