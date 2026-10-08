@@ -60,6 +60,11 @@ def test_equal_remaining_time_does_not_unnecessarily_preempt():
     ]
 
 
+def test_empty_process_list_is_rejected():
+    with pytest.raises(ValueError, match=r"^Add at least one process\.$"):
+        srtf([])
+
+
 @pytest.mark.parametrize("processes", [
     [{"pid": "P1", "arrival": 0, "burst": 0}],
     [{"pid": "P1", "arrival": -1, "burst": 2}],

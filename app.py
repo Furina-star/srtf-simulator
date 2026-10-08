@@ -8,6 +8,7 @@ from engine import srtf
 # /simulate accepts JSON only; form submissions are rejected and CORS is not enabled.
 # Revisit token protection if authenticated or state-changing routes are added.
 app = Flask(__name__, static_folder="static", static_url_path="/static")  # NOSONAR(S4502)
+app.json.sort_keys = False
 app.config["MAX_CONTENT_LENGTH"] = 16 * 1024
 
 

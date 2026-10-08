@@ -91,9 +91,11 @@ def _validate_process(process: object, index: int, seen: set[str]) -> Process:
 
 def _validate_processes(processes: object) -> list[Process]:
     """Validate the collection and return copies of the required input fields."""
-    # Keep empty lists valid, while rejecting incorrect containers and excess rows.
+    # Reject invalid containers and empty workloads before validating individual rows.
     if not isinstance(processes, list):
         raise ValueError("Processes must be a list.")
+    if not processes:
+        raise ValueError("Add at least one process.")
     if len(processes) > MAX_PROCESSES:
         raise ValueError(f"A maximum of {MAX_PROCESSES} processes is allowed.")
 
