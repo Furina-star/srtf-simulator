@@ -24,11 +24,39 @@ def srtf(processes):
 
         # Select the process with the shortest remaining time, breaking ties by arrival time and PID
         current = min(ready, key=lambda pid: (rem[pid], 0 if pid == running else 1, arrival[pid], pid))
-        print("t=", t, "ready=", ready, "current=", current)
 
-        if t >= 6: # Debugging: print the ready queue at time t
-            break
+        # Record the state of the system at this time step
+        steps.append({
+            "time": t,
+            "running": current,
+            "ready": sorted([pid for pid in ready if pid != current], key=lambda pid: (rem[pid], arrival[pid], pid)),
+            "remaining": dict(rem),
+            "events": [],  # empty for now, we fill it in step 5
+        })
+
         t += 1
+
+        # Update the remaining time for the currently running process
+        rem[current] -= 1
+        running = current
+
+        # If the current process has finished, record its completion time
+        if rem[current] == 0:
+            completion[current] = t
+            done += 1
+
+        # Record the first time the current process starts running
+        if current not in first_start:
+            first_start[current] = t
+
+        # Break the loop if the time exceeds 200 to prevent infinite loops in case of errors
+        if t > 200:
+            break
+
+    print(completion)
+    print(first_start)
+    print(len(steps))
+    print(steps[1])
 
 # Temporary test code to run the SRTF function with a sample input
 if __name__ == "__main__":
