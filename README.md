@@ -212,8 +212,8 @@ git push origin frontend
 - [x] Repository and project structure
 - [x] Interface contract drafted (`docs/INTERFACE_CONTRACT.md`)
 - [x] Sample result file for frontend development (`static/sample_result.json`)
-- [ ] SRTF engine
-- [ ] Flask server and validation
+- [x] SRTF engine
+- [x] Flask server and validation
 - [ ] Frontend layout
 - [ ] Gantt animation and playback controls
 - [ ] Input form and browser-side validation

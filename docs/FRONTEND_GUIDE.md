@@ -72,7 +72,9 @@ Treat the backend as a black box. You send a list in one shape and get back one 
 | `complete` | A process finished | Gray out its row, add a log line |
 | `idle` | Nobody to run | Striped gray IDLE block on the Gantt chart; CPU panel shows IDLE |
 
-Each event also has `text` (ready to print in the log) and `pid`.
+Each event also has `text` (ready to print in the log), `pid`, and `at`, the exact time it happened. For `complete`, `at` is one more than the step's `time`, because the process finishes at the end of that second. Use `at` for log lines such as `t=5  P2 completed`.
+
+> **Results table order:** build the results table in the same order as the input table, not by looping over the keys of `metrics`. That way the rows always match what the user typed.
 
 ## 5. Talking to the backend
 
@@ -99,23 +101,35 @@ if (!response.ok) {
 // result.steps, result.gantt, result.metrics, result.averages are now ready to use
 ```
 
-### Develop first with the sample file, switch to the real backend later
+### The backend is ready: use `/simulate`
 
-The backend may not be finished when you start. Until it is, load the sample instead:
+The real endpoint works, so build against it from the start. Use the `fetch("/simulate", ...)` code above. It returns exactly the same shape as `static/sample_result.json`.
+
+`static/sample_result.json` is still useful as:
+- a quick way to see what a full response looks like,
+- an offline fallback while the server is not running.
+
+**Do not edit `sample_result.json`.** A backend test compares the server's output with this file, so changing it by hand makes that test fail.
+
+To use the fallback temporarily:
 
 ```js
-const response = await fetch("/static/sample_result.json");   // fake backend reply
+const response = await fetch("/static/sample_result.json");   // saved copy of a real reply
 const result = await response.json();
 ```
 
-When the backend is ready, replace those two lines with the `fetch("/simulate", ...)` version. Nothing else changes, because both return the same shape.
-
 ### Running the page
 
-**Do not double-click `index.html`.** Opening it as a file breaks `fetch`. Use one of these:
+**Do not double-click `index.html`.** Opening it as a file breaks `fetch`. Run the server instead:
 
-- **VS Code Live Server extension:** open the **project root folder** in VS Code, right-click `static/index.html`, choose *Open with Live Server*.
-- **Flask:** once `app.py` serves the page, run `python app.py` and open `http://127.0.0.1:5000`.
+```bash
+source .venv/Scripts/activate      # Git Bash on Windows
+python app.py
+```
+
+Then open `http://127.0.0.1:5000` in the browser. Press `Ctrl+C` in the terminal to stop the server. After changing CSS or JavaScript, refresh the page (use `Ctrl+Shift+R` if the old version keeps showing).
+
+VS Code Live Server cannot reach `/simulate`, so it is only useful for the sample-file fallback.
 
 **Always use paths that start with `/static/`** in `index.html` and in `fetch`, for example `/static/css/style.css`, `/static/js/main.js`, `/static/sample_result.json`. That way they work under both Live Server and Flask.
 
@@ -168,9 +182,14 @@ Per step, the player calls the drawing functions: update the clock, the CPU pane
 Disable buttons that make no sense: Play before Run, Step after the last step.
 
 ### Input rules (browser-side validation)
-- Arrival is a whole number, 0 or more. Burst is a whole number, 1 or more.
-- PID cannot be blank or duplicated. Suggest the next PID (P1, P2, P3, ...) automatically.
-- Maximum 15 processes.
+
+Mirror the backend rules so users get instant feedback. The server checks everything again.
+
+- Arrival is a whole number, 0 or more. Burst is a whole number, 1 or more. Decimals are rejected.
+- Also limit arrival and burst to a sensible maximum (for example 100 each) so the Gantt chart stays readable. The server's hard limit is 10,000 time units in total.
+- PID cannot be blank or duplicated, and is at most 32 characters. Spaces at the start and end are ignored, so `" P1 "` equals `"P1"`. The name `IDLE` is reserved and cannot be used. Suggest the next PID (P1, P2, P3, ...) automatically.
+- Between 1 and 15 processes. If the table is empty when Run is pressed, show "Add at least one process."
+- If the server still returns an error, show `result.error` exactly as it arrives.
 - Show a clear message next to the field. Never let the page crash.
 - If the server cannot be reached, show: "Could not reach the simulator server. Is app.py running?"
 
@@ -201,6 +220,19 @@ git commit -m "Describe what you changed"
 git pull origin frontend             # again, in case your partner pushed meanwhile
 git push origin frontend
 ```
+
+### When the backend developer updates `main`
+
+When you are told that `main` has new backend changes (for example a new `engine.py` or `app.py`), bring them into your branch:
+
+```bash
+git checkout frontend
+git pull origin frontend
+git merge main
+git push origin frontend
+```
+
+Do this before you start working that day, so you are building against the latest server.
 
 ### Rules
 - **Pull before you start. Pull again before you push.**
