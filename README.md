@@ -138,8 +138,6 @@ Remove-Item Env:SRTF_TEST_URL
 SRTF_TEST_URL=http://127.0.0.1:5000 node --test tests/test_frontend.cjs
 ```
 
-See [manual browser checks](docs/FRONTEND_GUIDE.md#manual-browser-checklist) for layout, dark mode, and browser integration verification.
-
 ## Development workflow
 
 Start a feature branch from the latest main with a clean working tree:
