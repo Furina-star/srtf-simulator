@@ -160,10 +160,11 @@ PIDs, rejection of `"IDLE"`, and integer arrival/burst constraints. Send the tri
 in the request. Show readable errors returned by the backend rather than silently
 ignoring them.
 
-To keep animations readable, the team may **add a smaller, frontend-only input range**
-(for example, arrival `0–100` and burst `1–100`). These example per-field caps are **not
-backend limits** and should be agreed with the team before enforcing them. The backend's
-10,000-unit simulation limit remains authoritative for any inputs the browser allows.
+The current form ignores rows with both time fields blank, but rejects partially filled
+rows. PIDs are editable and are trimmed in the visible field as well as the request.
+It accepts decimal digit input only and rejects unsafe JavaScript integers before JSON
+serialization. PID length counts Unicode characters, matching Python. It adds no smaller
+per-field limits; the backend's 10,000-unit simulation limit remains authoritative.
 
 ### Frontend implementation notes
 
@@ -171,6 +172,14 @@ backend limits** and should be agreed with the team before enforcing them. The b
 - For each step, show events with `at === step.time` at the **start** of playback, and events with `at === step.time + 1` at the **end** of playback.
 - Use `step.ready` for the waiting queue and `step.remaining` for the before-execution numbers. Do not infer ready/arrival state from the keys of `remaining`.
 - Check the frontend against the **updated** `static/sample_result.json`, which includes `events[].at`.
+- `static/js/script.js` owns the current form, fetch, and playback implementation.
+  It validates the response, cancels obsolete requests, and discards responses from older
+  input versions. API text and PIDs are rendered as text, never interpreted as HTML.
+- Run displays the time-0 snapshot paused. Step completes a tick, logs its end events,
+  then displays the next start snapshot/events. Reset rewinds the saved result to time 0;
+  input edits discard it. Final metrics appear only at completion.
+- The progressive chart clips backend `gantt` intervals at the playback clock with one
+  fixed pixel scale. This changes no request/response fields or scheduling rules.
 
 ## Scheduling rules
 

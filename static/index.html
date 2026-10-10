@@ -1,4 +1,5 @@
 <!DOCTYPE html>
+<!-- SRTF input and backend-driven playback, styled for light and dark themes. -->
 <html lang="en">
 <head>
   <meta charset="UTF-8">
@@ -37,7 +38,7 @@
           <div class="panel-head">
             <div>
               <h3>Process Input</h3>
-              <p>Enter arrival and burst times for your processes below.</p>
+              <p>Edit PIDs and enter whole-number times. Rows with both times blank are ignored (1–15 processes).</p>
             </div>
             <span class="count-badge" id="processCount">5</span>
           </div>
@@ -51,7 +52,7 @@
           </div>
 
           <div id="processRows" class="process-rows-container">
-            <!-- 5 empty rows inserted automatically by JS (A, B, C, D, E) -->
+            <!-- Five unused rows with editable P1–P5 suggestions are inserted by JS. -->
           </div>
 
           <div class="table-actions">
@@ -59,7 +60,7 @@
             <button id="clearBtn" class="text-btn">Clear all</button>
           </div>
 
-          <div id="error" class="error"></div>
+          <div id="error" class="error" role="alert"></div>
 
           <div class="quick-actions">
             <button id="sampleBtn" class="secondary-btn">Load Sample</button>
@@ -71,9 +72,24 @@
           <div class="panel-head">
             <div>
               <h3>Simulation Results</h3>
-              <p id="statusText">Run the scheduler to generate results.</p>
+              <p id="statusText" role="status">Run the scheduler to generate results.</p>
             </div>
             <button id="resetBtn" class="ghost-btn">↻ Reset</button>
+          </div>
+
+          <!-- The clock shows a tick boundary; remaining work is the backend's start snapshot. -->
+          <div class="playback-controls">
+            <button id="playBtn" class="secondary-btn" disabled>▶ Play</button>
+            <button id="pauseBtn" class="secondary-btn" disabled>Pause</button>
+            <button id="stepBtn" class="secondary-btn" disabled>Step Forward</button>
+            <label for="speed">Playback Speed <output id="speedValue" for="speed">1×</output>
+              <input id="speed" type="range" min="1" max="20" value="1" step="1" disabled>
+            </label>
+          </div>
+          <div class="simulation-state">
+            <div><span>Current time</span><strong id="currentTime">0</strong></div>
+            <div><span>CPU state</span><strong id="cpuState">—</strong><small id="remainingWork">—</small></div>
+            <div><span>Ready queue · remaining work</span><div id="readyQueue" class="ready-queue"></div></div>
           </div>
 
           <div class="metrics">

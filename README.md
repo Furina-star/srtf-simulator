@@ -1,44 +1,21 @@
-# SRTF Scheduler Simulator
+﻿# SRTF Scheduler Simulator
 
-A web-based simulator that visualizes **Shortest Remaining Time First (SRTF)** CPU scheduling, also known as Preemptive Shortest Job Next (SJN). The user enters processes, runs the simulation, and watches an animated Gantt chart show which process holds the CPU, which are waiting, and when preemptions happen.
+An Operating Systems learning project that computes **Shortest Remaining Time First (SRTF)** schedules in Python and replays them in a browser. Flask serves the page and the stateless JSON API. The frontend displays backend results; it does not calculate scheduling decisions or process metrics.
 
-> Course project — Operating Systems
+## The algorithm
 
----
-
-## Table of Contents
-1. [About the Project](#about-the-project)
-2. [The Algorithm](#the-algorithm)
-3. [Features](#features)
-4. [Technology Stack](#technology-stack)
-5. [Project Structure](#project-structure)
-6. [Getting Started](#getting-started)
-7. [How to Use](#how-to-use)
-8. [Branches](#branches)
-9. [Git Workflow](#git-workflow)
-10. [Scope and Limitations](#scope-and-limitations)
-11. [Project Status](#project-status)
-12. [References](#references)
-
----
-
-## About the Project
-
-Scheduling algorithms are easy to get wrong when traced by hand. This simulator runs SRTF on a user-defined set of processes and replays the result as an animation, together with the computed metrics, so that preemption and waiting time can be seen step by step.
-
-## The Algorithm
-
-- At every time unit, the CPU runs the process with the **smallest remaining burst time** among those that have arrived.
-- If a newly arrived process has a shorter remaining time than the running one, the running process is **preempted**.
-- Ties: keep the running process, then earlier arrival, then lower PID.
+- At each integer time unit, the available process with the smallest remaining burst runs.
+- A shorter arriving process may preempt the current process.
+- Equal remaining times keep the running process, then prefer earlier arrival, then the lexicographically smaller PID (`P10` comes before `P2`).
+- One CPU, no I/O bursts or priorities, and zero context-switch cost.
 
 | Metric | Formula |
 |---|---|
-| Turnaround Time (TAT) | Completion Time − Arrival Time |
-| Waiting Time (WT) | TAT − Burst Time |
-| Response Time (RT) | First CPU start − Arrival Time |
+| Turnaround time (TAT) | Completion time − Arrival time |
+| Waiting time (WT) | TAT − Burst time |
+| Response time (RT) | First CPU start − Arrival time |
 
-Reference example (default sample and primary test case):
+The **Load Sample** workload is the canonical reference:
 
 | PID | Arrival | Burst |
 |---|---|---|
@@ -47,182 +24,140 @@ Reference example (default sample and primary test case):
 | P3 | 2 | 9 |
 | P4 | 3 | 5 |
 
-Expected Gantt chart: `P1 [0–1] | P2 [1–5] | P4 [5–10] | P1 [10–17] | P3 [17–26]`
-Expected averages: **WT = 6.5, TAT = 13.0**.
+Gantt: `P1 [0–1] | P2 [1–5] | P4 [5–10] | P1 [10–17] | P3 [17–26]`
 
-## Features
+Expected averages: **WT = 6.50, TAT = 13.00, RT = 4.25**.
 
-- Add, remove, and clear processes
-- Correct SRTF with preemption and CPU idle gaps
-- Animated Gantt chart with play, pause, step, reset, and speed control
-- Live ready queue, CPU status panel, and event log
-- Results table with completion, turnaround, waiting, and response times plus averages
-- Input validation in the browser and on the server
-- Sample data and random process generator
+## Setup and execution
 
-*(Features are planned; see [Project Status](#project-status).)*
+Requires Python 3.10+, Flask, and a modern browser. Node.js 18+ is optional for frontend regression tests; there are no npm dependencies.
 
-## Technology Stack
-
-| Layer | Technology |
-|---|---|
-| Scheduling engine | Python 3 |
-| Server | Flask |
-| Interface and animation | HTML5, CSS3, JavaScript |
-| Version control | Git and GitHub |
-
-## Project Structure
-
-```
-srtf-simulator/
-├── app.py                  # Flask server and validation
-├── engine.py               # SRTF engine (pure Python)
-├── requirements.txt        # Runtime dependencies (Flask)
-├── requirements-dev.txt    # Development and test dependencies (pytest)
-├── pytest.ini              # Makes plain pytest find engine.py
-├── tests/
-│   ├── test_engine.py      # Scheduling and validation tests
-│   └── test_app.py         # Flask endpoint tests
-├── static/
-│   ├── index.html          # page structure
-│   ├── sample_result.json  # worked-example result for frontend development
-│   ├── css/
-│   │   ├── style.css       # theme, layout, animation
-│   │   └── input.css       # input panel styles
-│   └── js/
-│       ├── player.js       # playback controller
-│       ├── gantt.js        # Gantt chart drawing
-│       ├── ui.js           # CPU panel, ready queue, event log, results table
-│       ├── main.js         # Run button and wiring
-│       └── input.js        # input form and browser validation
-├── docs/
-│   ├── INTERFACE_CONTRACT.md   # JSON agreement between Python and browser
-│   ├── FRONTEND_GUIDE.md       # guide for the frontend developers
-│   ├── document/               # written document
-│   ├── manual/                 # user manual
-│   ├── slides/                 # presentation slides
-│   └── screenshots/            # images for the manual
-├── .gitignore
-└── README.md
-```
-
-## Getting Started
-
-### Requirements
-- Python 3.10 or newer
-- A modern web browser (Chrome, Edge, or Firefox)
-- Git
-
-### Installation
-
-```bash
+```sh
 git clone https://github.com/Furina-star/srtf-simulator
 cd srtf-simulator
-
-# create a virtual environment
 python -m venv .venv
-
-# activate it (use the line that matches your terminal)
-source .venv/Scripts/activate      # Git Bash on Windows
-.venv\Scripts\Activate.ps1         # Windows PowerShell
-source .venv/bin/activate          # macOS / Linux
-
-pip install -r requirements.txt
 ```
 
-To run automated tests, install the development dependencies (including `pytest`):
+Activate the environment using the command for your shell:
 
-```bash
-pip install -r requirements-dev.txt
+```powershell
+# Windows PowerShell
+.\.venv\Scripts\Activate.ps1
 ```
 
-`requirements-dev.txt` includes the normal application dependencies, so you can also install only that file when developing.
+```sh
+# Git Bash on Windows
+source .venv/Scripts/activate
+# macOS / Linux
+source .venv/bin/activate
+```
 
-### Run
+Then install dependencies and start Flask:
 
-```bash
+```sh
+python -m pip install -r requirements.txt
 python app.py
 ```
 
-Then open **http://127.0.0.1:5000** in a web browser.
+Open **http://127.0.0.1:5000**. Stop the server with Ctrl+C. Open the page through Flask; double-clicking the HTML file or using a separate static server does not provide `/simulate`.
 
-### Run Tests
+For development, `python -m pip install -r requirements-dev.txt` installs Flask and pytest together.
 
-From the repository root (the directory containing `pytest.ini`), run:
+## Using the simulator
 
-```bash
-pytest
-```
+Five unused rows start with editable P1–P5 suggestions. Fill any 1–15 rows, or load the four-process sample. Rows with **both time fields blank** are ignored; a row with only one time is invalid. The count badge counts visible rows, including unused ones. Add Row suggests an unused PID. Removing a row never renames the others.
 
-`python -m pytest` also works. The `pytest.ini` file adds the repository root to the module search path, so both commands can import `engine.py`.
+PIDs are trimmed, case-sensitive, unique, and 1–32 Unicode characters. `IDLE` is reserved. Arrival must be a nonnegative integer and burst a positive integer. Numeric inputs use decimal digits; fractions, exponent notation, non-finite values, and integers outside JavaScript's safe range are rejected. The server remains authoritative for the 10,000-unit timeline limit, including idle time, and the 16 KiB request limit.
 
-## How to Use
-
-1. Enter a PID, arrival time, and burst time, then press **Add**. Repeat for each process, or press **Load Sample**.
-2. Press **Run** to compute the schedule.
-3. Press **Play** to watch the Gantt chart build, or **Step** to advance one time unit at a time. Use the **Speed** slider to change the pace.
-4. Read the results table and averages once the animation ends.
-5. Press **Reset** to replay, or **Clear** to start over.
-
-*(A full user manual with screenshots will be added in `docs/manual/`.)*
-
-## Branches
-
-| Branch | Purpose |
+| Control | Behavior |
 |---|---|
-| `main` | Stable, working version. Only finished work is merged here. |
-| `backend` | Python engine and Flask server (`app.py`, `engine.py`). |
-| `frontend` | Web interface and animation (everything in `static/`). |
+| Run SRTF | Validates and requests a backend result; displays time 0, paused, with its start events. Disabled while requesting. |
+| Play | Advances one simulation unit per timer tick. |
+| Pause | Cancels the timer and keeps the current time. |
+| Step Forward | While paused, completes one unit and displays the next boundary. |
+| Reset | Stops playback and rewinds the same result to time 0, clearing final metrics and later events. During a request, cancels it; Run is then required. Keeps inputs. |
+| Playback Speed | 1–20 units per second; changes the next timer delay immediately. |
+| Clear all | Cancels requests/playback and removes all rows and results. |
+| Load Sample | Cancels previous work and loads the four reference rows; press Run afterward. |
+| Add/remove/edit a row | Cancels previous work and invalidates its results immediately. |
+| Theme button | Toggles light/dark mode; remembers it when browser storage is available. |
 
-Work is done on `backend` or `frontend` and merged into `main` when it works. The JSON format exchanged between the two sides is defined in [`docs/INTERFACE_CONTRACT.md`](docs/INTERFACE_CONTRACT.md); frontend setup and responsibilities are in [`docs/FRONTEND_GUIDE.md`](docs/FRONTEND_GUIDE.md).
+The CPU and ready queue show `steps` snapshots and their remaining work. Arrivals/preemptions appear at tick start; completions appear at tick end, before arrivals at the same boundary. Final metrics and averages appear only after the last tick. CPU utilization is busy Gantt duration divided by total timeline duration.
 
-## Git Workflow
+The Gantt chart uses 48 pixels per time unit, labels interval boundaries, marks preemptions in red, and stripes idle blocks. It scrolls horizontally and follows playback. Long PIDs are shortened visually within blocks; hover for the full PID and interval. Full PIDs remain visible in the CPU/queue/results.
 
-Commands are for **Git Bash**. The example uses the `frontend` branch; the backend developer uses the same commands with `backend`.
+## Architecture and files
 
-### Every work session
-
-```bash
-git checkout frontend
-git pull origin frontend           # get the other member's latest work first
-# ... work on your own files ...
-git add .
-git commit -m "Describe what changed"
-git pull origin frontend           # again, in case the partner pushed meanwhile
-git push origin frontend
+```text
+app.py                       Flask routes and JSON errors
+engine.py                    Validation, SRTF steps, Gantt, metrics, averages
+requirements.txt             Flask runtime dependency
+requirements-dev.txt         Runtime dependencies and pytest
+pytest.ini                   Test import configuration
+static/index.html            Input, playback, CPU/queue, chart, log, results
+static/js/script.js          Validation, requests, cancellation, and replay
+static/css/style.css         Responsive layout and light/dark themes
+static/sample_result.json    Canonical backend fixture (do not regenerate casually)
+tests/test_engine.py         Engine regression tests
+tests/test_app.py            API, validation, and static asset tests
+tests/test_frontend.cjs      Dependency-free Node controller/DOM-adapter tests
+docs/INTERFACE_CONTRACT.md   Public JSON contract and scheduling details
+docs/FRONTEND_GUIDE.md       Implementation notes and manual test checklist
 ```
 
-### Rules
+`POST /simulate` sends `{ "processes": [{ "pid": "P1", "arrival": 0, "burst": 8 }] }` and receives `steps`, `gantt`, `metrics`, and `averages`. HTTP 400 and 413 use `{ "error": "..." }`. The frontend validates the response before rendering, handles connection/non-JSON errors, and ignores stale responses after cancellation. There is no database or automatic offline fixture fallback. See the [interface contract](docs/INTERFACE_CONTRACT.md).
 
-- Pull before you start, and pull again before you push.
-- Edit only your own files.
-- Never commit the `.venv` folder.
-- Commit small and often, and push at the end of every work session.
-- If a push is rejected, run `git pull origin frontend` and push again.
-- Only Furina merges into `main`.
+## Testing
 
-## Scope and Limitations
+From the repository root, with development dependencies installed:
 
-**Scope:** single CPU; integer arrival and burst times; no I/O bursts; no priorities; zero context-switch cost; one simulation at a time; runs locally in a web browser.
+```sh
+python -m pytest -q
+python engine.py
+node --check static/js/script.js
+node --test tests/test_frontend.cjs
+```
 
-**Limitations:** burst times must be known in advance; no multi-core support; no I/O wait modeling; starvation of long processes is demonstrated but not prevented; requires Python and Flask to run; limited to 15 processes; intended for learning, not for real OS scheduling.
+The Node suite uses a small DOM adapter and controllable timers. It tests input mapping, unsafe text, response validation, HTTP/network errors, request races, event ordering, Gantt proportions, and 10,000-tick playback. It does **not** test browser layout. Seven live HTTP tests are skipped unless a server URL is provided.
 
-## Project Status
+To include those tests, run `python app.py` in another terminal, then:
 
-- [x] Repository and project structure
-- [x] Interface contract drafted (`docs/INTERFACE_CONTRACT.md`)
-- [x] Sample result file for frontend development (`static/sample_result.json`)
-- [x] SRTF engine
-- [x] Flask server and validation
-- [ ] Frontend layout
-- [ ] Gantt animation and playback controls
-- [ ] Input form and browser-side validation
-- [ ] Manual testing against the expected-results table
-- [ ] Written document (title page, introduction, references)
-- [ ] User manual
-- [ ] Presentation slides
-- [ ] Final testing on the presentation laptop
+```powershell
+# PowerShell
+$env:SRTF_TEST_URL = 'http://127.0.0.1:5000'
+node --test tests/test_frontend.cjs
+Remove-Item Env:SRTF_TEST_URL
+```
 
-## References
+```sh
+# Bash
+SRTF_TEST_URL=http://127.0.0.1:5000 node --test tests/test_frontend.cjs
+```
 
-The reference list (APA 7th edition) is maintained in `docs/document/`.
+See [manual browser checks](docs/FRONTEND_GUIDE.md#manual-browser-checklist) for layout, dark mode, and browser integration verification.
+
+## Development workflow
+
+Start a feature branch from the latest main with a clean working tree:
+
+```sh
+git fetch origin main
+git switch -c fix/my-change origin/main
+```
+
+Run the regression suites before proposing a commit or PR. Coordinate changes across the frontend and backend using the interface contract. Do not commit virtual environments or local editor settings.
+
+Python files use a descriptive module docstring at the top and concise comments for functions/classes and non-obvious logic. JavaScript, HTML, and CSS use language-specific introductory and explanatory comments.
+
+## Status and limitations
+
+- [x] SRTF engine, validation, Flask routes, and canonical sample fixture
+- [x] Editable input rows and matching sample workload
+- [x] Backend communication, response checks, cancellation, and error feedback
+- [x] Tick playback, CPU state, ready queue, chronological events, proportional Gantt
+- [x] Final metrics/averages and light/dark styling
+- [x] Backend and lightweight frontend regression tests, including live HTTP checks
+- [ ] Visual checks across browsers, small screens, and the presentation laptop
+- [ ] Written academic report, user manual with screenshots, and presentation slides
+
+The model assumes known CPU bursts, with no multicore or I/O scheduling. Long jobs can starve; the simulator does not prevent starvation. Workloads are limited to 15 processes and 10,000 time units. Long runs need horizontal scrolling and can take several minutes even at maximum playback speed. Timers may slow in background tabs without changing event order. Random workload generation and export are not implemented.

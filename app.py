@@ -14,18 +14,19 @@ app.config["MAX_CONTENT_LENGTH"] = 16 * 1024
 
 @app.errorhandler(413)
 def request_too_large(error):
+    # Keep oversized requests in the same JSON error envelope as validation errors.
     return jsonify({"error": "Request body is too large (maximum 16 KB)."}), 413
 
 
 @app.route("/", methods=["GET"])
 def index() -> Response:
-    """Serve the group's frontend from the configured static directory."""
+    # Serve the group's frontend from the configured static directory.
     return send_from_directory("static", "index.html")
 
 
 @app.route("/simulate", methods=["POST"])
 def simulate() -> tuple[Response, int]:
-    """Validate the JSON envelope and return scheduling results or a client error."""
+    # Validate the JSON envelope and return scheduling results or a client error.
     # Invalid JSON or a non-JSON content type becomes the same JSON error response.
     data = request.get_json(silent=True)
 

@@ -1,3 +1,5 @@
+"""Verify SRTF scheduling, event timestamps, metrics, and input limits."""
+
 import pytest
 from engine import MAX_PROCESSES, MAX_SIMULATION_STEPS, srtf
 
@@ -94,3 +96,52 @@ def test_simulation_step_limit():
 def test_final_tick_on_limit_is_allowed():
     result = srtf([{"pid": "P1", "arrival": MAX_SIMULATION_STEPS - 1, "burst": 1}])
     assert result["metrics"]["P1"]["completion"] == MAX_SIMULATION_STEPS
+
+
+@pytest.mark.parametrize("processes", [
+    None, {}, [None],
+    [{"pid": "", "arrival": 0, "burst": 1}],
+    [{"pid": "  ", "arrival": 0, "burst": 1}],
+    [{"pid": 1, "arrival": 0, "burst": 1}],
+    [{"pid": "P1", "arrival": True, "burst": 1}],
+    [{"pid": "P1", "arrival": "0", "burst": 1}],
+    [{"pid": "P1", "arrival": 0.5, "burst": 1}],
+    [{"pid": "P1", "arrival": 0, "burst": 1.5}],
+    [{"pid": "P1", "arrival": 0, "burst": "1"}],
+])
+def test_malformed_process_fields(processes):
+    with pytest.raises(ValueError):
+        srtf(processes)
+
+
+def test_lexicographic_ties_and_ready_queue():
+    processes = [{"pid": pid, "arrival": 0, "burst": 1}
+                 for pid in ["P2", "P10", "P1"]]
+    result = srtf(processes)
+    assert [block["pid"] for block in result["gantt"]] == ["P1", "P10", "P2"]
+    assert result["steps"][0]["ready"] == ["P10", "P2"]
+    assert list(result["metrics"]) == ["P2", "P10", "P1"]
+    assert result["metrics"]["P2"]["response"] == 2
+
+
+def test_completion_then_arrival_at_same_boundary_and_later_idle():
+    result = srtf([
+        {"pid": "A", "arrival": 0, "burst": 1},
+        {"pid": "B", "arrival": 1, "burst": 1},
+        {"pid": "C", "arrival": 4, "burst": 1},
+    ])
+    events = [event for step in result["steps"] for event in step["events"]]
+    assert [(e["type"], e["pid"]) for e in events if e["at"] == 1] == [
+        ("complete", "A"), ("arrival", "B")
+    ]
+    assert result["gantt"][2] == {"pid": "IDLE", "start": 2, "end": 4}
+    assert result["averages"]["waiting"] == 0
+
+
+def test_custom_pid_identity_and_input_are_preserved():
+    processes = [{"pid": pid, "arrival": 0, "burst": 1}
+                 for pid in ["__proto__", "constructor", "<b>job</b>", "😀" * 32]]
+    original = [dict(process) for process in processes]
+    result = srtf(processes)
+    assert processes == original
+    assert list(result["metrics"]) == [p["pid"] for p in processes]

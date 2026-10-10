@@ -1,3 +1,5 @@
+"""Verify Flask routing, JSON validation, and integration with the scheduling engine."""
+
 import json
 from pathlib import Path
 
@@ -69,3 +71,59 @@ def test_reference_endpoint_matches_frontend_fixture(client):
     response = client.post("/simulate", json={"processes": sample})
     assert response.status_code == 200
     assert response.get_json() == expected
+
+
+# Exercise envelope parsing separately from engine validation.
+@pytest.mark.parametrize("body, content_type, message", [
+    ("{", "application/json", "Request body must be a JSON object."),
+    ("", "application/json", "Request body must be a JSON object."),
+    ("null", "application/json", "Request body must be a JSON object."),
+    ("[]", "application/json", "Request body must be a JSON object."),
+    ('{"processes": []}', "text/plain", "Request body must be a JSON object."),
+    ('{}', "application/json", "Missing processes field."),
+    ('{"processes": null}', "application/json", "Processes must be a list."),
+    ('{"processes": [{}]}', "application/json", "Process 1 must have a non-empty PID."),
+])
+def test_invalid_request_envelopes(client, body, content_type, message):
+    response = client.post("/simulate", data=body, content_type=content_type)
+    assert response.status_code == 400
+    assert response.get_json() == {"error": message}
+
+
+@pytest.mark.parametrize("count", [1, 5, 15, 16])
+def test_workload_counts(client, count):
+    processes = [{"pid": f"P{i}", "arrival": 0, "burst": 1}
+                 for i in range(1, count + 1)]
+    response = client.post("/simulate", json={"processes": processes})
+    assert response.status_code == (200 if count <= 15 else 400)
+    if count <= 15:
+        assert list(response.get_json()["metrics"]) == [p["pid"] for p in processes]
+        assert len(response.get_json()["steps"]) == count
+    else:
+        assert response.get_json() == {"error": "A maximum of 15 processes is allowed."}
+
+
+# The exact byte boundary must remain unchanged.
+@pytest.mark.parametrize("size, status", [(16384, 200), (16385, 413)])
+def test_request_size_boundary(client, size, status):
+    body = json.dumps({"processes": [{"pid": "P1", "arrival": 0, "burst": 1}]})
+    response = client.post("/simulate", data=body.ljust(size),
+                           content_type="application/json")
+    assert response.status_code == status
+
+
+@pytest.mark.parametrize("path, content_type, marker", [
+    ("/", "text/html", b'/static/js/script.js'),
+    ("/static/js/script.js", "javascript", b'fetch("/simulate"'),
+    ("/static/css/style.css", "text/css", b'.gantt-block'),
+    ("/static/sample_result.json", "application/json", b'"steps"'),
+])
+def test_frontend_assets(client, path, content_type, marker):
+    response = client.get(path)
+    assert response.status_code == 200
+    assert content_type in response.content_type
+    assert marker in response.data
+
+
+def test_only_post_is_allowed_for_simulation(client):
+    assert client.get("/simulate").status_code == 405

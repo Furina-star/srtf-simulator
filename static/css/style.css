@@ -1,3 +1,4 @@
+/* Mint-themed simulator layout, proportional timeline, and playback panels. */
 *{box-sizing:border-box;margin:0;padding:0}
 :root{
   --bg:#f3f8f6;--surface:#fff;--surface2:#f8fbfa;--text:#16322b;--muted:#71847f;
@@ -35,7 +36,7 @@ button{cursor:pointer}
 
 .process-grid-header {
   display: grid;
-  grid-template-columns: 44px 1fr 1fr 24px;
+  grid-template-columns: minmax(60px, 1fr) 1fr 1fr 24px;
   gap: 8px;
   padding: 0 8px 8px;
   font-size: 10px;
@@ -58,7 +59,7 @@ button{cursor:pointer}
 
 .process-input-row {
   display: grid;
-  grid-template-columns: 44px 1fr 1fr 24px;
+  grid-template-columns: minmax(60px, 1fr) 1fr 1fr 24px;
   gap: 8px;
   align-items: center;
   background: var(--surface2);
@@ -67,7 +68,7 @@ button{cursor:pointer}
   padding: 6px 8px;
 }
 
-.process-input-row .pid-badge {
+.process-input-row .pid-input {
   font-weight: 900;
   font-size: 12px;
   color: var(--mint-dark);
@@ -134,18 +135,19 @@ label{font-size:11px;font-weight:700;color:var(--muted);display:grid;gap:7px}
 .metric span{font-size:10px;color:var(--muted);display:block;font-weight:700}.metric strong{display:block;font-size:23px;margin-top:5px;letter-spacing:-.5px}.metric small{color:var(--mint-dark);font-size:9px;font-weight:800}
 .section-block{margin-top:21px}.section-title{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px}.section-title h4{font-size:14px}.section-title span{font-size:10px;color:var(--muted);display:block;margin-top:3px}
 
-/* Animated Gantt Chart */
+/* Absolute positions and border-box widths preserve one common time scale. */
 .gantt{min-height:150px;border:1px solid var(--line);border-radius:15px;background:var(--surface2);padding:17px;overflow-x:auto}
 .empty-chart{display:grid;place-items:center}.chart-placeholder{color:var(--muted);font-size:11px}
-.gantt-track{display:flex;align-items:stretch;min-width:max-content;padding:15px 0 35px;position:relative}
-.gantt-block{height:64px;min-width:55px;padding:9px 12px;background:var(--mint-soft);border:1px solid var(--mint);color:var(--mint-dark);display:flex;flex-direction:column;justify-content:center;align-items:center;position:relative;border-radius:8px;margin-right:3px;opacity:0;transform:scale(0.95);transition:all 0.3s ease-out}
-.gantt-block.visible{opacity:1;transform:scale(1)}
-.gantt-block strong{font-size:12px;font-weight:900}
-.gantt-block span.dur{font-size:9px;margin-top:3px;opacity:0.85}
+.gantt-track{height:112px;position:relative;margin:0 8px}
+.gantt-block{position:absolute;top:15px;height:64px;min-width:0;padding:6px 2px;background:var(--mint-soft);border:1px solid;color:var(--text);display:flex;flex-direction:column;justify-content:center;align-items:center;border-radius:5px}
+.gantt-block strong{font-size:11px;font-weight:900;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.gantt-block .dur{font-size:9px;margin-top:3px;white-space:nowrap}
+.gantt-block.idle{background:repeating-linear-gradient(135deg,var(--surface2),var(--surface2) 6px,var(--line) 6px,var(--line) 12px)}
+.gantt-block.preempted:before{content:"";position:absolute;left:-1px;top:-8px;height:76px;border-left:3px solid var(--danger)}
+.preemption-marker{position:absolute;top:7px;height:76px;border-left:3px solid var(--danger)}
 .time-label{position:absolute;bottom:-24px;font-size:10px;font-weight:700;color:var(--muted);white-space:nowrap}
-.gantt-block .time-start{left:0;transform:translateX(-50%)}
-.gantt-block .time-end{right:0;transform:translateX(50%)}
-
+.time-start{left:0;transform:translateX(-50%)}
+.time-end{right:0;transform:translateX(50%)}
 /* Execution Logs Styling */
 .log-container {
   background: var(--surface2);
@@ -198,3 +200,18 @@ td:first-child{font-weight:900;color:var(--mint-dark)}.table-empty{text-align:ce
 footer{display:flex;justify-content:space-between;padding:22px 2px 35px;color:var(--muted);font-size:10px}
 @media(max-width:1150px){.workspace{grid-template-columns:1fr}.input-panel{order:1}.result-panel{order:2}.hero{align-items:start;flex-direction:column}.metrics{grid-template-columns:repeat(2,1fr)}}
 @media(max-width:600px){.app-shell{padding:0 14px}.topbar{height:75px}.hero{margin:27px 0 20px}.hero h2{font-size:31px}.panel{padding:17px}.metrics{grid-template-columns:1fr 1fr}.metrics .metric strong{font-size:19px}footer{display:none}}
+/* Playback controls share the existing panel and theme styles. */
+button:disabled,input:disabled{opacity:.45;cursor:not-allowed;transform:none}
+.playback-controls{display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:16px}
+.playback-controls label{margin-left:auto;display:flex;align-items:center;flex-wrap:wrap}
+.playback-controls input{width:120px;accent-color:var(--mint)}
+.simulation-state{display:grid;grid-template-columns:80px minmax(100px,1fr) minmax(120px,2fr);gap:12px;background:var(--surface2);border:1px solid var(--line);border-radius:14px;padding:14px;margin-bottom:16px}
+.simulation-state span{font-size:11px;color:var(--muted)}
+.simulation-state strong{display:block;font-size:18px;margin:5px 0;overflow-wrap:anywhere}
+.simulation-state small{font-size:11px;color:var(--muted)}
+#cpuState{border-left:3px solid transparent;padding-left:7px}
+.ready-queue{display:flex;flex-wrap:wrap;gap:6px;margin-top:7px}
+.queue-chip{padding:5px 7px;border:1px solid;border-radius:7px;overflow-wrap:anywhere}
+.event-preempt{border-left:3px solid var(--danger)}
+.log-msg,td:first-child{overflow-wrap:anywhere}
+@media(max-width:600px){.simulation-state{grid-template-columns:70px 1fr}.simulation-state>div:last-child{grid-column:1/-1}.playback-controls label{margin-left:0}}
