@@ -157,7 +157,7 @@ Python files use a descriptive module docstring at the top and concise comments 
 - [x] Tick playback, CPU state, ready queue, chronological events, proportional Gantt
 - [x] Final metrics/averages and light/dark styling
 - [x] Backend and lightweight frontend regression tests, including live HTTP checks
-- [ ] Visual checks across browsers, small screens, and the presentation laptop
+- [x] Visual checks across browsers, small screens, and the presentation laptop
 - [ ] Written academic report, user manual with screenshots, and presentation slides
 
 The model assumes known CPU bursts, with no multicore or I/O scheduling. Long jobs can starve; the simulator does not prevent starvation. Workloads are limited to 15 processes and 10,000 time units. Long runs need horizontal scrolling and can take several minutes even at maximum playback speed. Timers may slow in background tabs without changing event order. Random workload generation and export are not implemented.

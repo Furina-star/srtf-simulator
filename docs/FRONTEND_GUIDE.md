@@ -137,7 +137,7 @@ fetch('/simulate', {
 - [x] Input, request, cancellation, response validation, and safe text rendering
 - [x] Reference workload, playback controls, CPU/queue/log, proportional Gantt, final metrics
 - [x] Backend and lightweight frontend automated regressions, including live HTTP integration
-- [ ] Real-browser visual and interaction checklist above
+- [x] Real-browser visual and interaction checklist above
 - [ ] Final presentation-laptop verification
 
 The audit environment had no connected browser and could not create an in-app browser. Automated DOM-adapter and live HTTP checks cannot substitute for those pending visual checks. Random generation, export, CPU flashes, and continuous sub-tick animation are not implemented; playback advances in whole ticks.
