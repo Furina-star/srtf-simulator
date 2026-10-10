@@ -63,6 +63,18 @@ Open **http://127.0.0.1:5000**. Stop the server with Ctrl+C. Open the page throu
 
 For development, `python -m pip install -r requirements-dev.txt` installs Flask and pytest together.
 
+## Live demo and deployment
+
+**Live demo:** https://srtf-simulator.onrender.com
+
+The deployed site runs the same Flask app under Gunicorn. The host installs `requirements.txt` and starts the app with:
+
+```sh
+gunicorn app:app
+```
+
+`python app.py` is for local use only; it listens on `127.0.0.1`. Gunicorn does not run on Windows, so use `python app.py` there. The app keeps no state and has no database, so the number of workers does not affect results. Free hosting plans may put an idle app to sleep, so open the live URL a minute before any demonstration.
+
 ## Using the simulator
 
 Five unused rows start with editable P1–P5 suggestions. Fill any 1–15 rows, or load the four-process sample. Rows with **both time fields blank** are ignored; a row with only one time is invalid. The badge separately displays the number of active rows and all visible rows. Add Row suggests an unused PID. Removing a row never renames the others.
@@ -95,7 +107,7 @@ The Gantt chart uses 48 pixels per time unit, labels interval boundaries, marks 
 ```text
 app.py                       Flask routes and JSON errors
 engine.py                    Validation, SRTF steps, Gantt, metrics, averages
-requirements.txt             Flask runtime dependency
+requirements.txt             Runtime dependencies (Flask, Gunicorn)
 requirements-dev.txt         Runtime dependencies and pytest
 pytest.ini                   Test import configuration
 static/index.html            Input, playback, CPU/queue, chart, log, results
@@ -106,7 +118,11 @@ tests/test_engine.py         Engine regression tests
 tests/test_app.py            API, validation, and static asset tests
 tests/test_frontend.cjs      Dependency-free Node controller/DOM-adapter tests
 docs/INTERFACE_CONTRACT.md   Public JSON contract and scheduling details
-docs/FRONTEND_GUIDE.md       Implementation notes and manual test checklist
+docs/document/               Written report
+docs/manual/                 User manual
+docs/slides/                 Presentation slides
+docs/screenshots/            Images for the manual and slides
+.github/workflows/tests.yml  Automated tests on every push and pull request
 ```
 
 `POST /simulate` sends `{ "processes": [{ "pid": "P1", "arrival": 0, "burst": 8 }] }` and receives `steps`, `gantt`, `metrics`, and `averages`. HTTP 400 and 413 use `{ "error": "..." }`. The frontend validates the response before rendering, handles connection/non-JSON errors, and ignores stale responses after cancellation. There is no database or automatic offline fixture fallback. See the [interface contract](docs/INTERFACE_CONTRACT.md).
@@ -121,6 +137,8 @@ python engine.py
 node --check static/js/script.js
 node --test tests/test_frontend.cjs
 ```
+
+Every push and pull request also runs these checks through GitHub Actions (`.github/workflows/tests.yml`); the Actions tab shows whether the latest run passed.
 
 The Node suite uses a small DOM adapter and controllable timers. It tests input mapping, unsafe text, response validation, HTTP/network errors, request races, event ordering, Gantt proportions, and 10,000-tick playback. It does **not** test browser layout. Seven live HTTP tests are skipped unless a server URL is provided.
 
@@ -147,7 +165,7 @@ git fetch origin main
 git switch -c fix/my-change origin/main
 ```
 
-Run the regression suites before proposing a commit or PR. Coordinate changes across the frontend and backend using the interface contract. Do not commit virtual environments or local editor settings.
+The `main` branch is protected: changes reach it only through a pull request, and direct pushes are blocked. Run the regression suites before proposing a commit or PR. Coordinate changes across the frontend and backend using the interface contract. Do not commit virtual environments or local editor settings.
 
 Python files use a descriptive module docstring at the top and concise comments for functions/classes and non-obvious logic. JavaScript, HTML, and CSS use language-specific introductory and explanatory comments.
 
