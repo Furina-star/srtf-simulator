@@ -169,6 +169,16 @@ The `main` branch is protected: changes reach it only through a pull request, an
 
 Python files use a descriptive module docstring at the top and concise comments for functions/classes and non-obvious logic. JavaScript, HTML, and CSS use language-specific introductory and explanatory comments.
 
+## Documentation
+
+Detailed technical documentation is available in the `docs/` directory:
+
+| Document | Description |
+|---|---|
+| [Frontend Guide](docs/FRONTEND_GUIDE.md) | Explains the frontend architecture, playback controls, state management, and backend integration. |
+| [Interface Contract](docs/INTERFACE_CONTRACT.md) | Defines the API request/response structure, validation rules, scheduling events, and metrics. |
+| [Deployment Guide](docs/DEPLOYMENT.md) | Provides instructions for deploying the application using Render and Gunicorn, including troubleshooting. |
+
 ## Status and limitations
 
 - [x] SRTF engine, validation, Flask routes, and canonical sample fixture

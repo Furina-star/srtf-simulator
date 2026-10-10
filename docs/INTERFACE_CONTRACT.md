@@ -1,17 +1,12 @@
-# Interface Contract
+# Frontend–Backend Interface Contract
 
-This is the single agreement between the Python side (engine and server) and the browser side
-(HTML, CSS, JavaScript). The JSON shape must not change unless the backend developer and both
-frontend developers agree first, because code on both sides depends on it.
+[Repository README](../README.md) · [Frontend guide](FRONTEND_GUIDE.md) · [Deployment guide](DEPLOYMENT.md)
 
-A working example of a **full** success response is `static/sample_result.json`. Use the
-updated sample containing `events[].at`, not an older copy without timestamps.
+This contract describes the current Python **`engine.py` → `app.py` → browser** interface. Scheduling and per-process metrics are computed in Python; JavaScript validates and replays the result. Changes to this schema or scheduling rules require coordinated backend/frontend updates and regression checks. The complete reference response is [`../static/sample_result.json`](../static/sample_result.json).
 
-## Request
+## Endpoint and input
 
-`POST /simulate`
-
-Send JSON with the `Content-Type: application/json` header:
+**`POST /simulate`** with header **`Content-Type: application/json`**.
 
 ```json
 {
@@ -24,13 +19,18 @@ Send JSON with the `Content-Type: application/json` header:
 }
 ```
 
-`processes` must be an array containing **1 to 15** valid processes. See [Input rules](#input-rules).
+Each process has `pid` (string), `arrival` (integer), and `burst` (integer). See [input limits](#input-limits) for complete validation rules. The Flask application serves the same-origin page at `GET /` and browser assets under `/static/`.
 
-## Success response (HTTP 200)
+## Successful response: HTTP 200
 
-The example below shows **only the step at time 1** of the reference case and abbreviated
-Gantt/metric fields to illustrate the shape. It is **not the complete response**; consult
-`static/sample_result.json` for every step, Gantt block, and metric.
+The response has exactly the four top-level categories used by the frontend:
+
+- `steps`: per-time-unit snapshots and timestamped events.
+- `gantt`: contiguous CPU assignment intervals, including idle time.
+- `metrics`: per-process CT, TAT, WT, RT data keyed by trimmed PID.
+- `averages`: mean turnaround, waiting, and response times, rounded to two decimal places.
+
+The example below is **illustrative and abbreviated**, not the full response. It shows only the time-1 step, two Gantt blocks, and one process metric. Use the JSON fixture for all time units.
 
 ```json
 {
@@ -41,8 +41,8 @@ Gantt/metric fields to illustrate the shape. It is **not the complete response**
       "ready": ["P1"],
       "remaining": {"P1": 7, "P2": 4, "P3": 9, "P4": 5},
       "events": [
-        {"type": "arrival", "at": 1, "pid": "P2", "text": "P2 arrived"},
-        {"type": "preempt", "at": 1, "pid": "P1", "by": "P2", "text": "P1 preempted by P2"}
+        {"type": "arrival", "pid": "P2", "at": 1, "text": "P2 arrived"},
+        {"type": "preempt", "pid": "P1", "by": "P2", "at": 1, "text": "P1 preempted by P2"}
       ]
     }
   ],
@@ -57,41 +57,34 @@ Gantt/metric fields to illustrate the shape. It is **not the complete response**
 }
 ```
 
-### Field rules
+### `steps[]`
 
-**`steps`**: one entry per time unit, in order, starting at time 0.
+The engine emits **one step for each time unit**, beginning at `time: 0`. For time `t`:
 
-- `time`: the **start** of the time unit (0, 1, 2, ...).
-- `running`: the PID assigned to the CPU during this unit, or `"IDLE"` when no process is ready.
-- `ready`: PIDs that have arrived and are waiting (**excluding** `running`), sorted by remaining time, then earlier arrival, then lexicographical PID. **Draw the on-screen ready queue from this list.**
-- `remaining`: remaining work of **every** process at the **start** of the unit, before CPU execution.
-- `events`: announcements associated with this step, in execution order. May be empty.
+| Field | Meaning |
+|---|---|
+| `time` | Start time of the tick (`t`) |
+| `running` | PID using the CPU this tick, or literal `"IDLE"` |
+| `ready` | Arrived, incomplete PIDs waiting for the CPU, **excluding** `running` |
+| `remaining` | Remaining work of **all** processes at the **start** of the tick |
+| `events` | Ordered event list associated with this tick |
 
-> **Important:** `remaining` includes processes that have **not arrived yet** (P3 and P4 at
-> time 1 in the example). A PID's appearance in `remaining` does not mean it has arrived or is
-> waiting. Use `ready` and `arrival` events for those states.
+The `ready` list is sorted by ascending remaining time, then earlier arrival time, then lexicographic PID. The `remaining` map also contains **future arrivals**; a process is **not ready** just because it appears in `remaining`.
 
-**`events[]`**: each event has `type`, `at`, `pid`, and `text`. Only a `preempt` event
-also has `by`.
+### `events[]` and time boundaries
 
-| `type` | Meaning | `at` (timestamp) | Additional rule |
+Each event contains `type`, `pid`, `at` (actual occurrence time), and `text`; a `preempt` event additionally has `by`, the incoming PID.
+
+| Event type | Meaning | `at` | PID value |
 |---|---|---|---|
-| `arrival` | A process arrived | `step.time` | `pid` is the arriving process |
-| `preempt` | The previous process was interrupted by another with less remaining work | `step.time` | `pid` is interrupted process; `by` is new CPU owner |
-| `complete` | A process finished executing | **`step.time + 1`** | `pid` is the completed process |
-| `idle` | CPU has no ready process | `step.time` | `pid` is `null` |
+| `arrival` | Process enters the system | `step.time` | Arriving PID |
+| `preempt` | Running process is interrupted | `step.time` | Interrupted PID; `by` is incoming PID |
+| `complete` | Process finishes the time unit | `step.time + 1` | Completed PID |
+| `idle` | CPU has no ready work | `step.time` | `null` |
 
-`at` is the **actual time of the event**, not necessarily the value of the enclosing
-`step.time`. Every event has a `text` string suitable for the event log.
+The frontend must show tick-start arrivals/preemptions **before** running that unit, and completions **after** it. At a shared clock boundary, an earlier tick's completion comes before the next tick's arrival. Two events can share a timestamp while belonging to different steps; do not globally deduplicate events by time.
 
-Event timing and ordering:
-
-- Arrival and preemption happen at the **start** of a step; arrival events appear before any preemption event.
-- Completion belongs to the **last step that executes the process**, but happens at the **end** of that step. Example: a process running in step `time = 1` that finishes has a `complete` event with `at = 2`.
-- Show start-of-step events before animating that CPU unit and completion events after it. Do not show a completion early just because it is stored in the same step's `events` array.
-- A completion at time 2 and an arrival at time 2 can belong to **different steps**; play each event from its own step rather than globally deduplicating timestamps.
-
-**Idle steps:** when P1 arrives at time 2 with burst 2, the step at time 0 looks like this:
+**Example idle snapshot:**
 
 ```json
 {
@@ -103,106 +96,76 @@ Event timing and ordering:
 }
 ```
 
-**`gantt`**: consecutive time units with the same CPU owner are merged into one block.
-Each `{ "pid", "start", "end" }` interval is **start-inclusive and end-exclusive**:
-`[start, end)`. Idle periods appear as `"pid": "IDLE"`. Animate using `steps`; use
-`gantt` to display/check the completed chart.
+This snapshot is from a separate case where P1 arrives at t=2 with burst 2.
 
-**`metrics`**: a dictionary keyed by each **trimmed PID**, with `completion`,
-`turnaround` (TAT), `waiting` (WT), and `response` (RT). The backend preserves the input
-process order in this object by disabling Flask's JSON-key sorting, but the frontend must
-**render the results table in the order of the submitted process array**, not rely on
-`Object.keys(metrics)` or `Object.entries(metrics)`.
+### `gantt[]`
 
-**`averages`**: average `turnaround`, `waiting`, and `response`, rounded to 2 decimals.
+Every item is `{ "pid": string, "start": integer, "end": integer }`. The range is **half-open `[start, end)`**: a start is included, an end is excluded. Consecutive ticks with the same CPU owner are merged into one block. Idle intervals use `pid: "IDLE"`. The frontend's chart clips these authoritative intervals at the current playback boundary; it must not choose a new CPU owner itself.
 
-## Error responses (HTTP 400 and 413)
+### `metrics` and `averages`
 
-**HTTP 400**: invalid JSON/body, missing `processes`, malformed entries, or a workload
-that violates the input or simulation limits. The response shape is always:
+`metrics[trimmedPid]` contains four integers:
+
+| Key | Definition |
+|---|---|
+| `completion` | Time when the process finishes |
+| `turnaround` | Completion − arrival |
+| `waiting` | Turnaround − original burst |
+| `response` | First CPU start − arrival |
+
+`averages` contains `turnaround`, `waiting`, and `response` as numbers rounded to **two decimals**. Flask disables JSON-key sorting to preserve insertion order, but the frontend must render the results table in the **original submitted process order**, not rely on JavaScript object enumeration (especially with numeric PIDs).
+
+**CPU utilization is not part of the API.** The frontend displays `(sum of non-IDLE Gantt durations / number of steps) × 100%`.
+
+## Input limits
+
+**Server-side enforcement in `engine.py` and `app.py`:**
+
+| Constraint | Rule |
+|---|---|
+| Workload | JSON array of **1–15 processes** |
+| PID | String, trimmed, nonempty, at most **32 Unicode characters**, unique after trimming |
+| Reserved PID | Exact uppercase `IDLE` rejected |
+| Arrival | Exact Python integer **≥ 0** (`bool` and floating-point values rejected) |
+| Burst | Exact Python integer **≥ 1** (`bool` and floating-point values rejected) |
+| Timeline | At most **10,000 time units**, counting idle time from t=0; final completion **may equal 10,000** |
+| Request body | Maximum **16,384 bytes (16 KiB)** |
+
+The frontend independently checks nonempty/unique trimmed PIDs and decimal-digit, nonnegative/positive safe integer times before sending; it skips visible rows with **both time fields blank** and rejects partially filled rows. The backend remains the final authority; direct API requests cannot bypass these server limits.
+
+## Error responses
+
+**HTTP 400** reports malformed JSON, a bad envelope, invalid process data, or a workload that cannot finish within the timeline limit. **HTTP 413** reports a request body exceeding 16 KiB. Both use a JSON error envelope:
 
 ```json
 {"error": "Add at least one process."}
 ```
 
-For example, `{"processes": []}` returns **400**, not an empty successful simulation.
-Other errors use the same `{"error": "..."}` shape with an appropriate message.
-
-**HTTP 413**: the JSON request body exceeds **16,384 bytes (16 KiB)**, the server's
-16 KB request limit. It uses the **same error shape**:
+or:
 
 ```json
 {"error": "Request body is too large (maximum 16 KB)."}
 ```
 
-The frontend must display either error type to the user. It must also handle the case
-where the server cannot be reached or does not return JSON.
+Other HTTP failures, network unavailability, and non-JSON responses must be handled by the frontend without reusing stale results. Only `POST /simulate` is valid for simulations; `GET /simulate` returns HTTP 405.
 
-## Input rules
+## Scheduling and tie rules
 
-These are the **server-enforced** rules:
+At each discrete time unit, choose the arrived and unfinished PID with minimum remaining burst. If the currently running process has the **same shortest remaining work**, keep it rather than preempting. If multiple other processes tie, prefer earlier arrival, then lexicographically smaller PID (so `P10` comes before `P2`). There is one CPU, no I/O blocking, and zero modeled context-switch overhead.
 
-- `processes`: a JSON array with **at least 1 and at most 15** entries. An empty list is invalid (`"Add at least one process."`).
-- Each process: a JSON object with `pid`, `arrival`, and `burst`.
-- `pid`: a string, non-empty after leading/trailing whitespace is removed. The backend **trims** it before use; its trimmed length must be **1 to 32 characters**. PIDs must be **unique after trimming**.
-- `"IDLE"` is a **reserved PID** because it identifies unused CPU time. This exact uppercase spelling is rejected.
-- `arrival`: a JSON integer **0 or greater**.
-- `burst`: a JSON integer **1 or greater**.
-- Booleans, decimal numbers, numeric strings, and missing values are not accepted as integer fields.
-- Simulation: **at most 10,000 time units**, counting idle units from time 0 as well as CPU execution. The final completion time may equal 10,000, but a run requiring the CPU at or beyond time 10,000 is rejected with HTTP 400.
-- JSON body: at most **16,384 bytes**, enforced by Flask with HTTP 413 if exceeded.
+## Canonical reference case
 
-### Frontend validation guidance
+| PID | Arrival | Burst | Completion | Turnaround | Waiting | Response |
+|---|---:|---:|---:|---:|---:|---:|
+| P1 | 0 | 8 | 17 | 17 | 9 | 0 |
+| P2 | 1 | 4 | 5 | 4 | 0 | 0 |
+| P3 | 2 | 9 | 26 | 24 | 15 | 15 |
+| P4 | 3 | 5 | 10 | 7 | 2 | 2 |
 
-The browser's form validation should mirror the server rules **before** calling
-`/simulate`: non-empty process list, maximum 15 processes, trimmed/unique 1–32-character
-PIDs, rejection of `"IDLE"`, and integer arrival/burst constraints. Send the trimmed PID
-in the request. Show readable errors returned by the backend rather than silently
-ignoring them.
+Gantt: `P1 [0,1) | P2 [1,5) | P4 [5,10) | P1 [10,17) | P3 [17,26)`.
 
-The current form ignores rows with both time fields blank, but rejects partially filled
-rows. PIDs are editable and are trimmed in the visible field as well as the request.
-It accepts decimal digit input only and rejects unsafe JavaScript integers before JSON
-serialization. PID length counts Unicode characters, matching Python. It adds no smaller
-per-field limits; the backend's 10,000-unit simulation limit remains authoritative.
+Average waiting = **6.50**; turnaround = **13.00**; response = **4.25**. CPU utilization = **100.00%**. This example is shared by the [README](../README.md), [frontend guide](FRONTEND_GUIDE.md), and [`sample_result.json`](../static/sample_result.json).
 
-### Frontend implementation notes
+## Change control
 
-- Save the submitted process array when starting a simulation. For the results table, iterate over that array and look up `metrics[process.pid.trim()]`.
-- For each step, show events with `at === step.time` at the **start** of playback, and events with `at === step.time + 1` at the **end** of playback.
-- Use `step.ready` for the waiting queue and `step.remaining` for the before-execution numbers. Do not infer ready/arrival state from the keys of `remaining`.
-- Check the frontend against the **updated** `static/sample_result.json`, which includes `events[].at`.
-- `static/js/script.js` owns the current form, fetch, and playback implementation.
-  It validates the response, cancels obsolete requests, and discards responses from older
-  input versions. API text and PIDs are rendered as text, never interpreted as HTML.
-- Run displays the time-0 snapshot paused. Step completes a tick, logs its end events,
-  then displays the next start snapshot/events. Reset rewinds the saved result to time 0;
-  input edits discard it. Final metrics appear only at completion.
-- The progressive chart clips backend `gantt` intervals at the playback clock with one
-  fixed pixel scale. This changes no request/response fields or scheduling rules.
-
-## Scheduling rules
-
-- The available process with the smallest remaining burst time runs first (SRTF).
-- Ties: keep the currently running process, then earlier arrival, then **lexicographically smaller PID** (string comparison, not numeric suffix comparison).
-- Time advances in whole units; context-switch cost is zero.
-
-## Reference test case (worked example)
-
-| PID | Arrival | Burst |
-|---|---|---|
-| P1 | 0 | 8 |
-| P2 | 1 | 4 |
-| P3 | 2 | 9 |
-| P4 | 3 | 5 |
-
-Gantt: `P1 [0–1] | P2 [1–5] | P4 [5–10] | P1 [10–17] | P3 [17–26]`
-
-| PID | Completion | TAT | WT | RT |
-|---|---|---|---|---|
-| P1 | 17 | 17 | 9 | 0 |
-| P2 | 5 | 4 | 0 | 0 |
-| P3 | 26 | 24 | 15 | 15 |
-| P4 | 10 | 7 | 2 | 2 |
-
-Averages: WT = 6.5, TAT = 13.0, RT = 4.25.
+Keep this contract, `engine.py`, `app.py`, `static/js/script.js`, `static/sample_result.json`, regression tests, and the related documentation in sync when changing any input rule, tie-breaker, timestamp, or response field. Do not change this contract solely to add a frontend UI control such as the slider: those operate on the existing steps and Gantt data.
