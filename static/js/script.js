@@ -168,112 +168,56 @@ function resetResults(clearStatus = true) {
   if (clearStatus) $("statusText").textContent = "Run the scheduler to generate results.";
 }
 
-function runSRTF() {
+async function runSRTF() {
   showError();
   const inputProcesses = getProcessesFromInputs();
   if (!inputProcesses) return;
 
-  const ps = inputProcesses.map((p, index) => ({
-    ...p, index, remaining: p.bt, firstStart: null, ct: null
-  }));
+  const payload = {
+    processes: inputProcesses.map(p => ({ pid: p.pid, arrival: p.at, burst: p.bt }))
+  };
 
-  let time = Math.min(...ps.map(p => p.at));
-  const startTime = time;
-  let completed = 0;
-  const segments = [];
-  let busyTime = 0;
-  let prevPid = null;
-  const logs = [];
-
-  // Log initial arrivals at start time
-  ps.filter(p => p.at === startTime).forEach(p => {
-    logs.push({ time: startTime, msg: `📥 <strong>Process ${p.pid}</strong> arrived (Burst Time: ${p.bt})` });
-  });
-
-  while (completed < ps.length) {
-    // Log arrivals occurring at current time unit
-    if (time > startTime) {
-      ps.filter(p => p.at === time).forEach(p => {
-        logs.push({ time, msg: `📥 <strong>Process ${p.pid}</strong> arrived (Burst Time: ${p.bt})` });
-      });
+  let data;
+  try {
+    const response = await fetch("/simulate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+    data = await response.json();
+    if (!response.ok) {
+      showError(data.error);
+      return;
     }
-
-    const ready = ps.filter(p => p.at <= time && p.remaining > 0);
-
-    if (!ready.length) {
-      const nextArrival = Math.min(...ps.filter(p => p.remaining > 0).map(p => p.at));
-      addSegment(segments, "IDLE", time, nextArrival);
-      logs.push({ time, msg: `⏸️ CPU is <strong>IDLE</strong> until t = ${nextArrival}` });
-      time = nextArrival;
-      prevPid = "IDLE";
-      continue;
-    }
-
-    ready.sort((a,b) => a.remaining - b.remaining || a.at - b.at || a.index - b.index);
-    const current = ready[0];
-
-    // Log CPU preemption or context switch
-    if (current.pid !== prevPid) {
-      if (prevPid && prevPid !== "IDLE") {
-        const prevProc = ps.find(p => p.pid === prevPid);
-        if (prevProc && prevProc.remaining > 0) {
-          logs.push({
-            time,
-            msg: `⚡ <strong>Preemption:</strong> Process ${current.pid} (Remaining BT: ${current.remaining}) preempts Process ${prevProc.pid} (Remaining BT: ${prevProc.remaining})`
-          });
-        } else {
-          logs.push({
-            time,
-            msg: `▶️ <strong>CPU Assigned:</strong> Process ${current.pid} begins execution (Remaining BT: ${current.remaining})`
-          });
-        }
-      } else {
-        logs.push({
-          time,
-          msg: `▶️ <strong>CPU Assigned:</strong> Process ${current.pid} begins execution (Remaining BT: ${current.remaining})`
-        });
-      }
-    }
-
-    if (current.firstStart === null) current.firstStart = time;
-    addSegment(segments, current.pid, time, time + 1);
-    current.remaining--;
-    busyTime++;
-    prevPid = current.pid;
-    time++;
-
-    // Log process completion
-    if (current.remaining === 0) {
-      current.ct = time;
-      completed++;
-      logs.push({
-        time,
-        msg: `✅ <strong>Process ${current.pid}</strong> finished execution (Completion Time: ${time})`
-      });
-    }
+  } catch (err) {
+    showError("Could not reach the simulator server. Is app.py running?");
+    return;
   }
 
-  const results = ps.map(p => ({
-    ...p,
-    tat: p.ct - p.at,
-    wt: (p.ct - p.at) - p.bt,
-    rt: p.firstStart - p.at
-  }));
+  // Build the rows for their results table, in input order
+  const burstByPid = Object.fromEntries(inputProcesses.map(p => [p.pid, p.bt]));
+  const results = inputProcesses.map(p => {
+    const m = data.metrics[p.pid];
+    return { pid: p.pid, at: p.at, bt: p.bt,
+             ct: m.completion, tat: m.turnaround, wt: m.waiting, rt: m.response };
+  });
 
-  state.segments = mergeSegments(segments);
-  
-  renderGanttAnimated(state.segments, startTime, time);
-  renderLogs(logs);
+  const startTime = data.gantt[0].start;
+  const endTime = data.gantt[data.gantt.length - 1].end;
+  const busyTime = data.gantt
+    .filter(b => b.pid !== "IDLE")
+    .reduce((sum, b) => sum + (b.end - b.start), 0);
+
+  state.segments = data.gantt;
+  renderGanttAnimated(state.segments, startTime, endTime);
+  renderLogs(buildLogs(data.steps, data.gantt, burstByPid));
   renderResults(results);
 
-  const avg = key => results.reduce((sum,p) => sum + p[key], 0) / results.length;
-  $("avgWT").textContent = format(avg("wt"));
-  $("avgTAT").textContent = format(avg("tat"));
-  $("avgRT").textContent = format(avg("rt"));
-  
-  const totalDuration = time - startTime;
-  $("cpuUtil").textContent = totalDuration > 0 ? `${format((busyTime / totalDuration) * 100)}%` : "—";
-  $("timelineInfo").textContent = `${state.segments.length} segments • ${startTime}–${time}`;
+  $("avgWT").textContent = format(data.averages.waiting);
+  $("avgTAT").textContent = format(data.averages.turnaround);
+  $("avgRT").textContent = format(data.averages.response);
+  $("cpuUtil").textContent = `${format((busyTime / (endTime - startTime)) * 100)}%`;
+  $("timelineInfo").textContent = `${state.segments.length} segments • ${startTime}–${endTime}`;
   $("statusText").textContent = `Simulation complete • ${results.length} processes scheduled`;
 }
 
@@ -365,6 +309,38 @@ function escapeHTML(str) {
   return String(str).replace(/[&<>"']/g, c => ({
     "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"
   }[c]));
+}
+
+function buildLogs(steps, gantt, burstByPid) {
+  const logs = [];
+  let prev = null;
+  for (const s of steps) {
+    const of = type => s.events.filter(e => e.type === type);
+
+    of("arrival").forEach(e => logs.push({ time: e.at,
+      msg: `📥 <strong>Process ${e.pid}</strong> arrived (Burst Time: ${burstByPid[e.pid]})` }));
+
+    const pre = of("preempt")[0];
+    if (pre) {
+      logs.push({ time: s.time,
+        msg: `⚡ <strong>Preemption:</strong> Process ${pre.by} (Remaining BT: ${s.remaining[pre.by]}) preempts Process ${pre.pid} (Remaining BT: ${s.remaining[pre.pid]})` });
+    } else if (s.running !== "IDLE" && s.running !== prev) {
+      logs.push({ time: s.time,
+        msg: `▶️ <strong>CPU Assigned:</strong> Process ${s.running} begins execution (Remaining BT: ${s.remaining[s.running]})` });
+    }
+
+    if (s.running === "IDLE" && prev !== "IDLE") {
+      const block = gantt.find(b => b.pid === "IDLE" && b.start === s.time);
+      logs.push({ time: s.time,
+        msg: `⏸️ CPU is <strong>IDLE</strong> until t = ${block.end}` });
+    }
+
+    of("complete").forEach(e => logs.push({ time: e.at,
+      msg: `✅ <strong>Process ${e.pid}</strong> finished execution (Completion Time: ${e.at})` }));
+
+    prev = s.running;
+  }
+  return logs;
 }
 
 init();
