@@ -1,346 +1,385 @@
-const state = {
-  processes: [],
-  segments: [],
-  dark: localStorage.getItem("srtf-theme") === "dark"
-};
-
+﻿/* Validate inputs and replay the Python timeline without scheduling locally. */
+"use strict";
 const $ = id => document.getElementById(id);
+const state = {
+  result: null, processes: [], time: 0, playing: false, timer: null,
+  controller: null, version: 0, colors: new Map(), dark: false
+};
+const SAMPLE = [
+  { pid: "P1", arrival: 0, burst: 8 }, { pid: "P2", arrival: 1, burst: 4 },
+  { pid: "P3", arrival: 2, burst: 9 }, { pid: "P4", arrival: 3, burst: 5 }
+];
+const UNIT_WIDTH = 48;
+
+// Variable text, including PIDs and server errors, enters the DOM only as text.
+function element(tag, className = "", text = "") {
+  const node = document.createElement(tag);
+  node.className = className;
+  node.textContent = text;
+  return node;
+}
 
 function init() {
-  if (state.dark) document.documentElement.dataset.theme = "dark";
-  $("themeBtn").textContent = state.dark ? "☀" : "☾";
-
-  $("addRowBtn").addEventListener("click", () => addRow());
-  $("runBtn").addEventListener("click", runSRTF);
-  $("clearBtn").addEventListener("click", clearAll);
-  $("resetBtn").addEventListener("click", resetResults);
-  $("sampleBtn").addEventListener("click", loadSample);
-  $("themeBtn").addEventListener("click", toggleTheme);
-
-  // Load 5 default empty rows (A, B, C, D, E) on start
-  loadDefaultEmptyRows();
-}
-
-function getLetterPID(index) {
-  let pid = "";
-  let i = index;
-  while (i >= 0) {
-    pid = String.fromCharCode((i % 26) + 65) + pid;
-    i = Math.floor(i / 26) - 1;
-  }
-  return pid;
-}
-
-function loadDefaultEmptyRows() {
-  const container = $("processRows");
-  container.innerHTML = "";
-  for (let i = 0; i < 5; i++) {
-    addRow(getLetterPID(i), "", "");
-  }
-}
-
-function addRow(pid = "", at = "", bt = "") {
-  showError();
-  const container = $("processRows");
-  const index = container.children.length;
-  const pName = pid || getLetterPID(index);
-
-  const row = document.createElement("div");
-  row.className = "process-input-row";
-  row.innerHTML = `
-    <span class="pid-badge">${escapeHTML(pName)}</span>
-    <input type="number" class="at-input" min="0" step="1" value="${at}" placeholder="0">
-    <input type="number" class="bt-input" min="1" step="1" value="${bt}" placeholder="5">
-    <button class="row-del-btn" onclick="removeRow(this)" title="Remove process">×</button>
-  `;
-  container.appendChild(row);
-  updateProcessCount();
-}
-
-window.removeRow = function(btn) {
-  const row = btn.closest(".process-input-row");
-  row.remove();
-  reindexPIDs();
-  updateProcessCount();
-  resetResults(false);
-};
-
-function reindexPIDs() {
-  const rows = document.querySelectorAll("#processRows .process-input-row");
-  rows.forEach((row, i) => {
-    row.querySelector(".pid-badge").textContent = getLetterPID(i);
+  try { state.dark = localStorage.getItem("srtf-theme") === "dark"; } catch { /* Storage is optional. */ }
+  applyTheme();
+  for (const [id, handler] of Object.entries({
+    addRowBtn: () => addRow(), runBtn: runSRTF, clearBtn: clearAll,
+    resetBtn: resetPlayback, sampleBtn: loadSample, themeBtn: toggleTheme,
+    playBtn: play, pauseBtn: pause, stepBtn: advance
+  })) $(id).addEventListener("click", handler);
+  $("speed").addEventListener("input", () => {
+    $("speedValue").textContent = `${$("speed").value}×`;
+    if (state.playing) scheduleTick();
   });
+  $("processRows").addEventListener("input", invalidate);
+  for (let i = 0; i < 5; i++) addRow();
+  invalidate();
 }
 
-function updateProcessCount() {
-  const count = document.querySelectorAll("#processRows .process-input-row").length;
-  $("processCount").textContent = count;
+// Suggest an unused PID without renaming any existing row.
+function addRow(pid, arrival = "", burst = "") {
+  const container = $("processRows");
+  if (container.children.length >= 15) return;
+  invalidate();
+  if (pid === undefined) {
+    const used = new Set(Array.from(container.children, row => row.querySelector(".pid-input").value.trim()));
+    let index = 1;
+    while (used.has(`P${index}`)) index++;
+    pid = `P${index}`;
+  }
+  const row = element("div", "process-input-row");
+  for (const [className, value, label] of [
+    ["pid-input", pid, "Process ID"], ["at-input", arrival, "Arrival time"], ["bt-input", burst, "Burst time"]
+  ]) {
+    const input = element("input", className);
+    // Text inputs retain malformed numeric text, so it cannot become a skipped blank row.
+    input.type = "text";
+    input.value = value;
+    input.setAttribute("aria-label", label);
+    if (className !== "pid-input") input.inputMode = "numeric";
+    input.placeholder = className === "at-input" ? "0" : className === "bt-input" ? "5" : "PID";
+    row.append(input);
+  }
+  const remove = element("button", "row-del-btn", "×");
+  remove.title = "Remove process";
+  remove.setAttribute("aria-label", "Remove process");
+  remove.addEventListener("click", () => { row.remove(); invalidate(); });
+  row.append(remove);
+  container.append(row);
+  updateControls();
 }
 
+// Ignore unused rows with both time fields blank; validate every partial row.
 function getProcessesFromInputs() {
-  const rows = document.querySelectorAll("#processRows .process-input-row");
-  const list = [];
-  let isValid = true;
-
-  if (!rows.length) {
-    showError("Please add at least one process row before running.");
-    return null;
+  const processes = [];
+  const seen = new Set();
+  for (const [index, row] of Array.from($("processRows").children).entries()) {
+    const pidInput = row.querySelector(".pid-input");
+    const pid = pidInput.value.trim();
+    const arrivalText = row.querySelector(".at-input").value.trim();
+    const burstText = row.querySelector(".bt-input").value.trim();
+    if (!arrivalText && !burstText) continue;
+    const prefix = `Row ${index + 1}: `;
+    if (!pid || Array.from(pid).length > 32) throw new Error(prefix + "PID must contain 1 to 32 characters.");
+    if (pid === "IDLE") throw new Error(prefix + "PID IDLE is reserved for CPU idle time.");
+    if (seen.has(pid)) throw new Error(prefix + `Duplicate PID: ${pid}.`);
+    const arrival = Number(arrivalText);
+    const burst = Number(burstText);
+    if (!/^\d+$/.test(arrivalText) || !Number.isSafeInteger(arrival) || arrival < 0) {
+      throw new Error(prefix + "Arrival time must be a safe whole number of 0 or more.");
+    }
+    if (!/^\d+$/.test(burstText) || !Number.isSafeInteger(burst) || burst < 1) {
+      throw new Error(prefix + "Burst time must be a safe whole number of 1 or more.");
+    }
+    seen.add(pid);
+    pidInput.value = pid;
+    processes.push({ pid, arrival, burst });
   }
-
-  rows.forEach((row, index) => {
-    if (!isValid) return;
-
-    const pid = row.querySelector(".pid-badge").textContent.trim();
-    const atVal = row.querySelector(".at-input").value.trim();
-    const btVal = row.querySelector(".bt-input").value.trim();
-
-    if (atVal === "") {
-      showError(`Please fill in Arrival Time for ${pid} (Row ${index + 1}).`);
-      isValid = false;
-      return;
-    }
-    if (btVal === "") {
-      showError(`Please fill in Burst Time for ${pid} (Row ${index + 1}).`);
-      isValid = false;
-      return;
-    }
-
-    const at = Number(atVal);
-    const bt = Number(btVal);
-
-    if (!Number.isInteger(at) || at < 0) {
-      showError(`Row ${index + 1} (${pid}): Arrival Time must be a whole number ≥ 0.`);
-      isValid = false;
-      return;
-    }
-    if (!Number.isInteger(bt) || bt <= 0) {
-      showError(`Row ${index + 1} (${pid}): Burst Time must be a whole number > 0.`);
-      isValid = false;
-      return;
-    }
-
-    list.push({ pid, at, bt });
-  });
-
-  return isValid ? list : null;
-}
-
-function showError(message = "") {
-  $("error").textContent = message;
+  if (!processes.length) throw new Error("Add at least one process with arrival and burst times.");
+  if (processes.length > 15) throw new Error("A maximum of 15 processes is allowed.");
+  return processes;
 }
 
 function clearAll() {
-  $("processRows").innerHTML = "";
-  updateProcessCount();
-  resetResults();
-  showError();
+  $("processRows").replaceChildren();
+  invalidate();
 }
 
 function loadSample() {
-  const sampleData = [
-    { pid: "A", at: 0, bt: 8 },
-    { pid: "B", at: 1, bt: 4 },
-    { pid: "C", at: 2, bt: 2 },
-    { pid: "D", at: 3, bt: 1 },
-    { pid: "E", at: 4, bt: 3 }
-  ];
-  const container = $("processRows");
-  container.innerHTML = "";
-  sampleData.forEach(p => addRow(p.pid, p.at, p.bt));
-  resetResults(false);
+  clearAll();
+  SAMPLE.forEach(p => addRow(p.pid, p.arrival, p.burst));
 }
 
-function resetResults(clearStatus = true) {
-  state.segments = [];
-  $("avgWT").textContent = "—";
-  $("avgTAT").textContent = "—";
-  $("avgRT").textContent = "—";
-  $("cpuUtil").textContent = "—";
-  $("timelineInfo").textContent = "—";
-  $("resultsBody").innerHTML = `<tr><td colspan="7" class="table-empty">No results yet.</td></tr>`;
-  $("gantt").className = "gantt empty-chart";
-  $("gantt").innerHTML = `<div class="chart-placeholder">Your execution timeline will appear here.</div>`;
-  
-  const logBox = $("logContainer");
-  logBox.className = "log-container empty-log";
-  logBox.innerHTML = `<div class="chart-placeholder">Run the simulation to view step-by-step decision logs.</div>`;
+// Version checks also reject responses arriving after an abort or newer request.
+function invalidate() {
+  pause();
+  state.version++;
+  if (state.controller) state.controller.abort();
+  state.controller = null;
+  state.result = null;
+  state.processes = [];
+  clearDisplay();
+  $("error").textContent = "";
+  $("statusText").textContent = "Run the scheduler to generate results.";
+  updateControls();
+}
 
-  if (clearStatus) $("statusText").textContent = "Run the scheduler to generate results.";
+function clearDisplay() {
+  state.time = 0;
+  for (const id of ["avgWT", "avgTAT", "avgRT", "cpuUtil", "timelineInfo", "cpuState", "remainingWork"]) $(id).textContent = "—";
+  $("currentTime").textContent = "0";
+  $("cpuState").style.borderColor = "";
+  $("readyQueue").replaceChildren(element("span", "chart-placeholder", "No waiting processes."));
+  const row = element("tr");
+  const cell = element("td", "table-empty", "Final results appear when playback finishes.");
+  cell.colSpan = 7;
+  row.append(cell);
+  $("resultsBody").replaceChildren(row);
+  $("gantt").className = "gantt empty-chart";
+  $("gantt").replaceChildren(element("div", "chart-placeholder", "Your execution timeline will appear here."));
+  $("gantt").scrollLeft = 0;
+  $("logContainer").className = "log-container empty-log";
+  $("logContainer").replaceChildren(element("div", "chart-placeholder", "Run the simulation to view execution events."));
+}
+
+// Check every field consumed by rendering without recomputing schedules or metrics.
+function validateResponse(data, processes) {
+  const object = value => value !== null && typeof value === "object" && !Array.isArray(value);
+  const integer = value => Number.isSafeInteger(value) && value >= 0;
+  const pids = processes.map(p => p.pid);
+  const known = pid => pids.includes(pid);
+  const own = (value, key) => Object.prototype.hasOwnProperty.call(value, key);
+  const require = condition => { if (!condition) throw new Error("The server returned an invalid simulation result. Please try again."); };
+  require(object(data) && Array.isArray(data.steps) && data.steps.length > 0 && data.steps.length <= 10000);
+  require(Array.isArray(data.gantt) && data.gantt.length > 0 && object(data.metrics) && object(data.averages));
+  data.steps.forEach((step, index) => {
+    require(object(step) && step.time === index && (known(step.running) || step.running === "IDLE"));
+    require(Array.isArray(step.ready) && step.ready.every(pid => known(pid) && pid !== step.running)
+      && new Set(step.ready).size === step.ready.length);
+    require(object(step.remaining) && pids.every(pid => own(step.remaining, pid) && integer(step.remaining[pid])));
+    require(Array.isArray(step.events));
+    step.events.forEach(event => {
+      require(object(event) && ["arrival", "preempt", "complete", "idle"].includes(event.type) && typeof event.text === "string");
+      require(event.at === index + (event.type === "complete" ? 1 : 0));
+      require(event.type === "idle" ? event.pid === null : known(event.pid));
+      if (event.type === "preempt") require(known(event.by));
+    });
+  });
+  let end = 0;
+  data.gantt.forEach(block => {
+    require(object(block) && (known(block.pid) || block.pid === "IDLE")
+      && block.start === end && integer(block.end) && block.end > end && block.end <= data.steps.length);
+    for (let time = block.start; time < block.end; time++) require(data.steps[time].running === block.pid);
+    end = block.end;
+  });
+  require(end === data.steps.length);
+  pids.forEach(pid => require(own(data.metrics, pid) && object(data.metrics[pid])
+    && ["completion", "turnaround", "waiting", "response"].every(key => integer(data.metrics[pid][key]))));
+  require(["waiting", "turnaround", "response"].every(key => Number.isFinite(data.averages[key]) && data.averages[key] >= 0));
 }
 
 async function runSRTF() {
-  showError();
-  const inputProcesses = getProcessesFromInputs();
-  if (!inputProcesses) return;
-
-  const payload = {
-    processes: inputProcesses.map(p => ({ pid: p.pid, arrival: p.at, burst: p.bt }))
-  };
-
-  let data;
+  if (state.controller) return;
+  invalidate();
+  const version = state.version;
   try {
-    const response = await fetch("/simulate", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload)
-    });
-    data = await response.json();
+    const processes = getProcessesFromInputs();
+    state.controller = new AbortController();
+    $("statusText").textContent = "Requesting simulation…";
+    updateControls();
+    let response;
+    try {
+      response = await fetch("/simulate", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ processes }), signal: state.controller.signal
+      });
+    } catch (error) {
+      if (error.name === "AbortError") throw error;
+      throw new Error("Could not reach the simulator server. Is app.py running?");
+    }
+    let data;
+    try { data = await response.json(); } catch {
+      throw new Error(`The server returned a non-JSON response (HTTP ${response.status}). Please try again.`);
+    }
+    if (version !== state.version) return;
     if (!response.ok) {
-      showError(data.error);
-      return;
+      const fallback = response.status === 413 ? "Request body is too large (maximum 16 KB)."
+        : response.status === 400 ? "The server rejected the process inputs." : "The server could not simulate this workload.";
+      throw new Error(data && typeof data.error === "string" ? data.error : `${fallback} (HTTP ${response.status})`);
     }
-  } catch (err) {
-    showError("Could not reach the simulator server. Is app.py running?");
-    return;
+    validateResponse(data, processes);
+    state.processes = processes;
+    state.result = data;
+    state.colors = new Map(processes.map((p, index) => [p.pid, `hsl(${155 + index * 47} 55% 42%)`]));
+    prepareStep();
+  } catch (error) {
+    if (version !== state.version || error.name === "AbortError") return;
+    state.result = null;
+    state.processes = [];
+    clearDisplay();
+    $("error").textContent = error.message;
+    $("statusText").textContent = "Simulation failed. Check the inputs or server and run again.";
+  } finally {
+    if (version === state.version) { state.controller = null; updateControls(); }
   }
-
-  // Build the rows for their results table, in input order
-  const burstByPid = Object.fromEntries(inputProcesses.map(p => [p.pid, p.bt]));
-  const results = inputProcesses.map(p => {
-    const m = data.metrics[p.pid];
-    return { pid: p.pid, at: p.at, bt: p.bt,
-             ct: m.completion, tat: m.turnaround, wt: m.waiting, rt: m.response };
-  });
-
-  const startTime = data.gantt[0].start;
-  const endTime = data.gantt[data.gantt.length - 1].end;
-  const busyTime = data.gantt
-    .filter(b => b.pid !== "IDLE")
-    .reduce((sum, b) => sum + (b.end - b.start), 0);
-
-  state.segments = data.gantt;
-  renderGanttAnimated(state.segments, startTime, endTime);
-  renderLogs(buildLogs(data.steps, data.gantt, burstByPid));
-  renderResults(results);
-
-  $("avgWT").textContent = format(data.averages.waiting);
-  $("avgTAT").textContent = format(data.averages.turnaround);
-  $("avgRT").textContent = format(data.averages.response);
-  $("cpuUtil").textContent = `${format((busyTime / (endTime - startTime)) * 100)}%`;
-  $("timelineInfo").textContent = `${state.segments.length} segments • ${startTime}–${endTime}`;
-  $("statusText").textContent = `Simulation complete • ${results.length} processes scheduled`;
 }
 
-function addSegment(segments, pid, start, end) {
-  segments.push({pid, start, end});
+function updateControls() {
+  const pending = state.controller !== null;
+  const playable = state.result !== null && state.time < state.result.steps.length;
+  $("runBtn").disabled = pending || $("processRows").children.length === 0;
+  $("playBtn").disabled = !playable || state.playing;
+  $("pauseBtn").disabled = !state.playing;
+  $("stepBtn").disabled = !playable || state.playing;
+  $("resetBtn").disabled = !pending && !state.result;
+  $("speed").disabled = !playable;
+  $("addRowBtn").disabled = $("processRows").children.length >= 15;
+  $("clearBtn").disabled = $("processRows").children.length === 0 && !pending && !state.result;
+  $("processCount").textContent = `${$("processRows").children.length}/15 rows`;
 }
 
-function mergeSegments(segments) {
-  const merged = [];
-  for (const seg of segments) {
-    const last = merged[merged.length - 1];
-    if (last && last.pid === seg.pid && last.end === seg.start) {
-      last.end = seg.end;
-    } else {
-      merged.push({...seg});
-    }
+// Only one timer is outstanding; speed changes replace it and pause cancels it.
+function scheduleTick() {
+  clearTimeout(state.timer);
+  state.timer = setTimeout(() => {
+    state.timer = null;
+    if (!state.playing) return;
+    advance();
+    if (state.playing) scheduleTick();
+  }, 1000 / Number($("speed").value));
+}
+
+function play() {
+  if (!state.result || state.playing || state.time >= state.result.steps.length) return;
+  state.playing = true;
+  $("statusText").textContent = "Playing simulation.";
+  updateControls();
+  scheduleTick();
+}
+
+function pause() {
+  clearTimeout(state.timer);
+  state.timer = null;
+  state.playing = false;
+  if (state.result && state.time < state.result.steps.length) $("statusText").textContent = "Paused. Play or step forward to continue.";
+  updateControls();
+}
+
+function resetPlayback() {
+  if (state.controller) { invalidate(); return; }
+  pause();
+  clearDisplay();
+  if (state.result) prepareStep();
+  $("error").textContent = "";
+  updateControls();
+}
+
+// Show start events once; completions in this step stay hidden until its end.
+function prepareStep() {
+  const step = state.result.steps[state.time];
+  $("currentTime").textContent = step.time;
+  $("cpuState").textContent = step.running;
+  $("cpuState").style.borderColor = state.colors.get(step.running) || "var(--muted)";
+  $("remainingWork").textContent = step.running === "IDLE" ? "No process running" : `${step.remaining[step.running]} units remaining`;
+  $("readyQueue").replaceChildren(...step.ready.map(pid => {
+    const chip = element("span", "queue-chip", `${pid} · ${step.remaining[pid]} left`);
+    chip.style.borderColor = state.colors.get(pid);
+    return chip;
+  }));
+  if (!step.ready.length) $("readyQueue").append(element("span", "chart-placeholder", "No waiting processes."));
+  appendEvents(step.events.filter(event => event.at === step.time));
+  $("statusText").textContent = state.playing ? "Playing simulation." : "Ready. Play or step forward to continue.";
+}
+
+// Finish the previous tick before showing the next tick's arrivals at the same time.
+function advance() {
+  if (!state.result || state.time >= state.result.steps.length) return;
+  const step = state.result.steps[state.time];
+  state.time++;
+  $("currentTime").textContent = state.time;
+  renderGantt();
+  appendEvents(step.events.filter(event => event.at === state.time));
+  if (state.time < state.result.steps.length) prepareStep();
+  else {
+    pause();
+    $("cpuState").textContent = "Complete";
+    $("remainingWork").textContent = "All processes finished";
+    $("readyQueue").replaceChildren(element("span", "chart-placeholder", "No waiting processes."));
+    renderResults();
+    $("statusText").textContent = `Simulation complete · ${state.processes.length} processes scheduled`;
   }
-  return merged;
+  updateControls();
 }
 
-function renderLogs(logs) {
+function appendEvents(events) {
   const container = $("logContainer");
-  container.className = "log-container";
-  container.innerHTML = logs.map(l => `
-    <div class="log-item">
-      <span class="log-time">t = ${l.time}</span>
-      <span class="log-msg">${l.msg}</span>
-    </div>
-  `).join("");
+  if (container.classList.contains("empty-log")) { container.replaceChildren(); container.className = "log-container"; }
+  for (const event of events) {
+    const row = element("div", `log-item event-${event.type}`);
+    row.append(element("span", "log-time", `t = ${event.at}`), element("span", "log-msg", event.text));
+    container.append(row);
+  }
+  container.scrollTop = container.scrollHeight;
 }
 
-function renderGanttAnimated(segments, minTime, maxTime) {
-  const gantt = $("gantt");
-  gantt.className = "gantt";
-  const total = maxTime - minTime || 1;
-
-  const trackHTML = segments.map((seg, i) => {
-    const width = Math.max(((seg.end - seg.start) / total) * 100, 4.5);
-    const idle = seg.pid === "IDLE";
-    const duration = seg.end - seg.start;
-    const isLast = i === segments.length - 1;
-
-    return `
-      <div class="gantt-block" style="width:${width}%${idle ? ";opacity:.55" : ""}">
-        <strong>${escapeHTML(seg.pid)}</strong>
-        <span class="dur">${duration} unit${duration === 1 ? "" : "s"}</span>
-        <span class="time-label time-start">${seg.start}</span>
-        ${isLast ? `<span class="time-label time-end">${seg.end}</span>` : ""}
-      </div>
-    `;
-  }).join("");
-
-  gantt.innerHTML = `<div class="gantt-track">${trackHTML}</div>`;
-
-  const blocks = gantt.querySelectorAll(".gantt-block");
-  blocks.forEach((block, index) => {
-    setTimeout(() => {
-      block.classList.add("visible");
-    }, index * 180);
-  });
+// Clip backend Gantt intervals at the clock; do not infer CPU choices locally.
+function renderGantt() {
+  const chart = $("gantt");
+  const track = element("div", "gantt-track");
+  track.style.width = `${state.time * UNIT_WIDTH}px`;
+  for (const block of state.result.gantt) {
+    if (block.start >= state.time) break;
+    const end = Math.min(block.end, state.time);
+    const preempted = state.result.steps[block.start].events.some(event => event.type === "preempt");
+    const node = element("div", `gantt-block${block.pid === "IDLE" ? " idle" : ""}${preempted ? " preempted" : ""}`);
+    node.style.left = `${block.start * UNIT_WIDTH}px`;
+    node.style.width = `${(end - block.start) * UNIT_WIDTH}px`;
+    node.style.borderColor = state.colors.get(block.pid) || "var(--muted)";
+    node.title = `${block.pid} [${block.start}–${end}]${preempted ? " · preemption" : ""}`;
+    node.append(element("strong", "", block.pid), element("span", "dur", `${end - block.start} units`), element("span", "time-label time-start", block.start));
+    if (end === state.time) node.append(element("span", "time-label time-end", end));
+    track.append(node);
+  }
+  // A preemption at the current boundary is visible before its first CPU unit runs.
+  const next = state.result.steps[state.time];
+  if (next && next.events.some(event => event.type === "preempt")) {
+    const marker = element("div", "preemption-marker");
+    marker.style.left = `${state.time * UNIT_WIDTH}px`;
+    marker.title = `Preemption at t = ${state.time}`;
+    marker.setAttribute("aria-label", marker.title);
+    track.append(marker);
+  }
+  chart.className = "gantt";
+  chart.replaceChildren(track);
+  chart.scrollLeft = chart.scrollWidth;
+  $("timelineInfo").textContent = `0–${state.time} / ${state.result.steps.length} units`;
 }
 
-function renderResults(results) {
-  $("resultsBody").innerHTML = results.map(p => `
-    <tr>
-      <td>${escapeHTML(p.pid)}</td>
-      <td>${p.at}</td>
-      <td>${p.bt}</td>
-      <td>${p.ct}</td>
-      <td>${p.tat}</td>
-      <td>${p.wt}</td>
-      <td>${p.rt}</td>
-    </tr>
-  `).join("");
+function renderResults() {
+  $("resultsBody").replaceChildren(...state.processes.map(process => {
+    const metrics = state.result.metrics[process.pid];
+    const row = element("tr");
+    for (const value of [process.pid, process.arrival, process.burst, metrics.completion, metrics.turnaround, metrics.waiting, metrics.response]) row.append(element("td", "", value));
+    row.firstChild.style.borderLeft = `3px solid ${state.colors.get(process.pid)}`;
+    return row;
+  }));
+  $("avgWT").textContent = state.result.averages.waiting.toFixed(2);
+  $("avgTAT").textContent = state.result.averages.turnaround.toFixed(2);
+  $("avgRT").textContent = state.result.averages.response.toFixed(2);
+  // Utilization is a display statistic from backend intervals, not a scheduling metric.
+  const busy = state.result.gantt.reduce((total, block) => total + (block.pid === "IDLE" ? 0 : block.end - block.start), 0);
+  $("cpuUtil").textContent = `${(busy / state.result.steps.length * 100).toFixed(2)}%`;
 }
 
-function format(n) {
-  return Number.isInteger(n) ? String(n) : n.toFixed(2);
+function applyTheme() {
+  document.documentElement.dataset.theme = state.dark ? "dark" : "light";
+  $("themeBtn").textContent = state.dark ? "☀" : "☾";
 }
 
 function toggleTheme() {
   state.dark = !state.dark;
-  document.documentElement.dataset.theme = state.dark ? "dark" : "light";
-  localStorage.setItem("srtf-theme", state.dark ? "dark" : "light");
-  $("themeBtn").textContent = state.dark ? "☀" : "☾";
-}
-
-function escapeHTML(str) {
-  return String(str).replace(/[&<>"']/g, c => ({
-    "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"
-  }[c]));
-}
-
-function buildLogs(steps, gantt, burstByPid) {
-  const logs = [];
-  let prev = null;
-  for (const s of steps) {
-    const of = type => s.events.filter(e => e.type === type);
-
-    of("arrival").forEach(e => logs.push({ time: e.at,
-      msg: `📥 <strong>Process ${e.pid}</strong> arrived (Burst Time: ${burstByPid[e.pid]})` }));
-
-    const pre = of("preempt")[0];
-    if (pre) {
-      logs.push({ time: s.time,
-        msg: `⚡ <strong>Preemption:</strong> Process ${pre.by} (Remaining BT: ${s.remaining[pre.by]}) preempts Process ${pre.pid} (Remaining BT: ${s.remaining[pre.pid]})` });
-    } else if (s.running !== "IDLE" && s.running !== prev) {
-      logs.push({ time: s.time,
-        msg: `▶️ <strong>CPU Assigned:</strong> Process ${s.running} begins execution (Remaining BT: ${s.remaining[s.running]})` });
-    }
-
-    if (s.running === "IDLE" && prev !== "IDLE") {
-      const block = gantt.find(b => b.pid === "IDLE" && b.start === s.time);
-      logs.push({ time: s.time,
-        msg: `⏸️ CPU is <strong>IDLE</strong> until t = ${block.end}` });
-    }
-
-    of("complete").forEach(e => logs.push({ time: e.at,
-      msg: `✅ <strong>Process ${e.pid}</strong> finished execution (Completion Time: ${e.at})` }));
-
-    prev = s.running;
-  }
-  return logs;
+  applyTheme();
+  try { localStorage.setItem("srtf-theme", state.dark ? "dark" : "light"); } catch { /* Keep the theme for this page when storage is blocked. */ }
 }
 
 init();

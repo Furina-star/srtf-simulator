@@ -1,266 +1,143 @@
-# Frontend Guide
+﻿# Frontend Guide
 
-This guide is for the two frontend developers. It explains what to build, who owns which file, how the page talks to the backend, and how to use Git.
+The frontend **replays Python results**. `engine.py` owns scheduling and process metrics; `app.py` owns Flask routing and the JSON API. Do not add a JavaScript scheduler or recalculate completion, waiting, turnaround, or response times.
 
-**Key idea:** the backend does all the scheduling. The frontend never calculates a schedule. It sends the process list, receives a finished result, and **replays it as an animation**.
+## Files and communication
 
----
-
-## 1. Split of work
-
-| | Frontend A (Animation) | Frontend B (Input and wiring) |
-|---|---|---|
-| **Files** | `static/js/player.js`, `static/js/gantt.js`, `static/js/ui.js`, `static/css/style.css` | `static/index.html`, `static/js/input.js`, `static/js/main.js`, `static/css/input.css` |
-| **Builds** | Playback controls logic, Gantt chart animation, CPU panel, ready queue, event log, results table | Page structure, process input form and table, validation, sample/random/clear buttons, Run button and the call to the backend |
-
-Edit only your own files. If the other developer's file needs a change, ask them.
-
-`index.html` needs a `<script>` tag for every JS file and a `<link>` for every CSS file. Frontend B owns it, so Frontend A asks B to add anything new. Script order: `input.js`, `gantt.js`, `ui.js`, `player.js`, then `main.js` last.
-
-## 2. What each file does
-
-| File | Job |
+| File | Responsibility |
 |---|---|
-| `index.html` | The page: all panels and buttons, each with an `id` the scripts use |
-| `input.js` | Reads what the user types, adds and removes table rows, validates, handles Load Sample, Random, and Clear, and returns the list of processes |
-| `main.js` | The conductor. On Run it takes the processes from `input.js`, sends them to the backend, gets the result, creates the `Player`, and connects the Play, Pause, Step, Reset, and Speed buttons |
-| `player.js` | Works like a video player. It holds the list of steps and a position in it. Play, Pause, Step, and Reset move that position, and for each step it tells the page what to draw |
-| `gantt.js` | Draws and animates the Gantt chart blocks and the time ruler |
-| `ui.js` | Updates the clock, the CPU panel, the ready queue, the event log, and the results table |
-| `style.css` / `input.css` | Layout, colors, and animation styles |
+| `static/index.html` | Inputs, controls, CPU/queue, chart, log, and results |
+| `static/js/script.js` | Input validation, `/simulate` requests, state, and playback |
+| `static/css/style.css` | Existing mint design, responsive layout, and dark theme |
+| `static/sample_result.json` | Canonical four-process backend result used by tests |
+| `tests/test_frontend.cjs` | Node built-in test runner with a small DOM/timer adapter |
 
-## 3. Flow of the page
+The page loads `/static/css/style.css` and `/static/js/script.js`. Run `python app.py` and visit http://127.0.0.1:5000; a file URL or separate static server cannot serve the API. See the [README](../README.md#setup-and-execution) for environment setup.
 
-1. The user fills the table (or presses **Load Sample**) and presses **Run**.
-2. `main.js` sends the processes to the backend and receives the **result**.
-3. A `Player` is created from the result.
-4. **Play** replays the result one time unit at a time. Each tick updates the Gantt chart, the CPU panel, the ready queue, and the event log.
-5. After the last step, the results table and averages appear.
+`getProcessesFromInputs()` returns trimmed `{pid, arrival, burst}` objects in row order. `runSRTF()` posts `{processes}` as JSON to `/simulate`. On success it checks `steps`, `gantt`, `metrics`, and `averages` before displaying anything. These fields follow the unchanged [interface contract](INTERFACE_CONTRACT.md).
 
-## 4. The data format (no scheduling knowledge needed)
+HTTP 400/413 error messages are displayed as text. Other HTTP failures, invalid/non-JSON responses, and connection failures produce readable errors and empty results. There is no automatic fixture fallback: showing the sample for unrelated inputs would be misleading.
 
-Treat the backend as a black box. You send a list in one shape and get back one object in another shape. The full definition is in `docs/INTERFACE_CONTRACT.md`. A working example is `static/sample_result.json`.
+## Inputs and state
 
-### What you send
+- Five default rows suggest P1–P5. Both numeric fields blank means an unused row; one blank numeric field means a validation error. The badge counts visible rows, not submitted processes.
+- Accept 1–15 populated rows. The Add Row control stops at 15 visible rows.
+- PIDs are editable, trimmed, case-sensitive, unique, and 1–32 Unicode characters. Exact uppercase `IDLE` is reserved. Delete/add never renames unrelated rows.
+- Arrival uses nonnegative decimal integer text; burst uses positive decimal integer text. Reject fractions, exponent/hex notation, non-finite values, and unsafe JavaScript integers. Text inputs preserve malformed input for validation instead of letting number-input sanitization turn it into an unused row.
+- There are no extra frontend arrival/burst caps. The backend enforces the 10,000-unit simulation and 16 KiB body limits.
+- The Load Sample rows are P1 `(0,8)`, P2 `(1,4)`, P3 `(2,9)`, P4 `(3,5)`.
 
-```json
-{ "processes": [ {"pid": "P1", "arrival": 0, "burst": 8}, {"pid": "P2", "arrival": 1, "burst": 4} ] }
-```
+`state.controller` tracks the current fetch. Duplicate Run calls return while it is pending. Input edits, row changes, Clear, and Load Sample abort it and increment `state.version`; responses from older versions cannot change results, errors, or a newer request's controls. Reset during a request also cancels it. Every invalidation stops playback and clears results immediately.
 
-### What you get back, in plain words
+PIDs, event text, and API errors use `textContent` and DOM elements, never interpolated `innerHTML`. Color lookup uses a `Map`, so PIDs such as `__proto__` remain safe. Result rows follow the submitted array rather than JavaScript object-key order.
 
-| Field | Meaning |
-|---|---|
-| `steps` | A film strip. **Each entry is one second of CPU time.** Draw one entry per tick. |
-| `steps[i].time` | Which second this is (0, 1, 2, ...) |
-| `steps[i].running` | Who has the CPU this second (`"P1"`, `"P2"`, ... or `"IDLE"` if nobody has arrived yet) |
-| `steps[i].ready` | Who is waiting in line this second, already in the right order. **Draw the ready queue from this list.** |
-| `steps[i].remaining` | How much work each process has left at the start of this second |
-| `steps[i].events` | Things to announce in the event log this second |
-| `gantt` | The finished chart, already merged into blocks (the animation is built from `steps`; this is for checking) |
-| `metrics` | One row per process for the results table (completion, turnaround, waiting, response) |
-| `averages` | The three averages shown under the results table |
-
-> **Careful:** `remaining` lists **every** process, including ones that have not arrived yet. Do not show a process in the queue just because it appears in `remaining`. Use `ready` for the queue.
-
-### Event types
-
-| `type` | What it means | What the page should do |
-|---|---|---|
-| `arrival` | A process just arrived | Add its chip to the ready queue with a short highlight |
-| `preempt` | The running process was interrupted by a shorter one (`pid` was interrupted, `by` took over) | Red marker at that point on the Gantt chart, red log line, brief flash on the CPU panel |
-| `complete` | A process finished | Gray out its row, add a log line |
-| `idle` | Nobody to run | Striped gray IDLE block on the Gantt chart; CPU panel shows IDLE |
-
-Each event also has `text` (ready to print in the log), `pid`, and `at`, the exact time it happened. For `complete`, `at` is one more than the step's `time`, because the process finishes at the end of that second. Use `at` for log lines such as `t=5  P2 completed`.
-
-> **Results table order:** build the results table in the same order as the input table, not by looping over the keys of `metrics`. That way the rows always match what the user typed.
-
-## 5. Talking to the backend
-
-**No JSON file is created.** JSON is just text sent over the connection and nothing is saved.
-
-```js
-// 1. Build the list from the table (this is what input.js returns)
-const processes = [ {pid: "P1", arrival: 0, burst: 8}, {pid: "P2", arrival: 1, burst: 4} ];
-
-// 2. Send it
-const response = await fetch("/simulate", {
-  method: "POST",
-  headers: { "Content-Type": "application/json" },
-  body: JSON.stringify({ processes })        // JavaScript object -> JSON text
-});
-
-// 3. Receive it
-const result = await response.json();         // JSON text -> JavaScript object
-
-if (!response.ok) {
-  showError(result.error);                    // backend sends {"error": "..."} on bad input
-  return;
-}
-// result.steps, result.gantt, result.metrics, result.averages are now ready to use
-```
-
-### The backend is ready: use `/simulate`
-
-The real endpoint works, so build against it from the start. Use the `fetch("/simulate", ...)` code above. It returns exactly the same shape as `static/sample_result.json`.
-
-`static/sample_result.json` is still useful as:
-- a quick way to see what a full response looks like,
-- an offline fallback while the server is not running.
-
-**Do not edit `sample_result.json`.** A backend test compares the server's output with this file, so changing it by hand makes that test fail.
-
-To use the fallback temporarily:
-
-```js
-const response = await fetch("/static/sample_result.json");   // saved copy of a real reply
-const result = await response.json();
-```
-
-### Running the page
-
-**Do not double-click `index.html`.** Opening it as a file breaks `fetch`. Run the server instead:
-
-```bash
-source .venv/Scripts/activate      # Git Bash on Windows
-python app.py
-```
-
-Then open `http://127.0.0.1:5000` in the browser. Press `Ctrl+C` in the terminal to stop the server. After changing CSS or JavaScript, refresh the page (use `Ctrl+Shift+R` if the old version keeps showing).
-
-VS Code Live Server cannot reach `/simulate`, so it is only useful for the sample-file fallback.
-
-**Always use paths that start with `/static/`** in `index.html` and in `fetch`, for example `/static/css/style.css`, `/static/js/main.js`, `/static/sample_result.json`. That way they work under both Live Server and Flask.
-
-Press **F12 → Network** in the browser to see exactly what was sent and received when something goes wrong.
-
-## 6. How the animation works
-
-### Player (`player.js`)
-
-The player holds `steps` and a counter `i`. Each tick it shows `steps[i]` and increases `i`.
-
-- **Play:** repeat the tick using `setTimeout(tick, delay)`.
-- **Pause:** stop the timer. **Play** resumes from the same `i`.
-- **Step:** show exactly one step and do not start the timer.
-- **Reset:** set `i = 0` and clear the chart, queue, log, and results.
-- **Speed slider:** changes `delay` (for example `delay = 1100 - sliderValue * 100`), even while playing.
-- After the last step, show the results table and averages.
-
-Per step, the player calls the drawing functions: update the clock, the CPU panel (running process and its remaining time), the ready queue (from `ready`), the Gantt chart, and the event log (from `events`).
-
-### Gantt chart (`gantt.js`)
-
-- One time unit is a fixed width in pixels (for example 48 px).
-- Each block is an absolutely positioned `div`: `left = start × unit`, `width = length × unit`.
-- If the running process is the same as the previous step, **grow** the existing block by one unit. If it is different, create a new block starting at zero width and grow it.
-- Smooth growth comes from a CSS `transition` on `width`. Set `transition-duration` equal to the current delay so the bar grows continuously.
-- Show a time tick under the right edge of each new unit. When the chart is wider than the screen, scroll to keep the newest block in view.
-- `IDLE` blocks use light gray with diagonal stripes.
-
-### Look and feel (`style.css`)
-
-- **One fixed color per process**, used everywhere (Gantt bar, ready-queue chip, CPU panel, results table). Keep one object, for example `pid -> color`, shared by all scripts.
-- Suggested palette: `#4E79A7, #F28E2B, #E15759, #76B7B2, #59A14F, #EDC948, #B07AA1, #FF9DA7, #9C755F, #BAB0AC`.
-- CSS variables for the theme, CSS Grid for the page layout, Flexbox inside panels.
-- Preemption uses red. Text on bars must be readable against the bar color.
-
-## 7. Controls
+## Playback controls and event timing
 
 | Control | Behavior |
 |---|---|
-| **Run** | Validates, gets the result, creates the Player, shows time 0 |
-| **Play / Pause** | Starts or stops the replay |
-| **Step** | Advances one time unit |
-| **Reset** | Clears chart, queue, log, and results. Keeps the process table |
-| **Speed** | Changes the delay immediately |
-| **Clear** | Empties the process table and the display |
-| **Load Sample** | Fills the table with the 4 sample processes |
-| **Random** | Fills the table with valid random processes |
+| Run | Fetches and validates a result, then shows time 0 paused and its start events. |
+| Play | Starts one recurring timeout. Disabled before a result or after completion. |
+| Pause | Cancels the outstanding timeout and preserves the boundary snapshot. |
+| Step Forward | Completes exactly one unit while paused. Disabled during playback. |
+| Reset | Stops the timer, clears later chart/log/metrics, and rewinds the saved result to time 0 with its initial snapshot/start events. Inputs remain. While fetching, cancels the request and requires Run again. |
+| Speed | 1–20 ticks/second. Replaces the next timeout immediately during playback. |
+| Clear / Load Sample / input edits | Cancel requests and playback, discard the result, and require another Run. |
 
-Disable buttons that make no sense: Play before Run, Step after the last step.
+At boundary `t`, the CPU shows `steps[t].running`, the queue uses `steps[t].ready` in its supplied order, and remaining work uses `steps[t].remaining`. Future processes in `remaining` are not automatically shown as waiting.
 
-### Input rules (browser-side validation)
+`prepareStep()` appends only the step's start events (`at === time`). The chart shows executed units before this boundary. `advance()` then:
 
-Mirror the backend rules so users get instant feedback. The server checks everything again.
+1. Advances the clock by one and extends the chart to that boundary.
+2. Appends completion events from the old step (`at === old time + 1`).
+3. Shows the next step's snapshot and start events, or displays final metrics if finished.
 
-- Arrival is a whole number, 0 or more. Burst is a whole number, 1 or more. Decimals are rejected.
-- Also limit arrival and burst to a sensible maximum (for example 100 each) so the Gantt chart stays readable. The server's hard limit is 10,000 time units in total.
-- PID cannot be blank or duplicated, and is at most 32 characters. Spaces at the start and end are ignored, so `" P1 "` equals `"P1"`. The name `IDLE` is reserved and cannot be used. Suggest the next PID (P1, P2, P3, ...) automatically.
-- Between 1 and 15 processes. If the table is empty when Run is pressed, show "Add at least one process."
-- If the server still returns an error, show `result.error` exactly as it arrives.
-- Show a clear message next to the field. Never let the page crash.
-- If the server cannot be reached, show: "Could not reach the simulator server. Is app.py running?"
+This preserves completion-before-arrival ordering at a shared timestamp. A completion is never displayed merely because it exists in the current step. Pausing/resuming does not replay start events. Reset deliberately clears the old log before replaying time 0.
 
-## 8. Git workflow (Git Bash)
+Only one timeout is pending, including for a 10,000-tick result. Each callback handles one tick and yields to the browser; speed changes, resets, and edits cancel that timer. The log appends new events without rebuilding its history.
 
-### One-time setup
+## Gantt and results
 
-```bash
-git clone https://github.com/Furina-star/srtf-simulator
-cd srtf-simulator
-git checkout frontend
+`renderGantt()` clips backend `gantt` intervals at the playback clock. The response validator checks agreement between each interval and `steps[].running`; this checks consistency, not scheduling choices. At completion the displayed intervals match the response exactly.
 
-python -m venv .venv
-source .venv/Scripts/activate        # Git Bash on Windows
-pip install -r requirements.txt
+All intervals use `left = start × 48px` and `width = elapsed duration × 48px`. There is no minimum block width or percentage clamp. Border-box sizing and no inter-block margins preserve proportions. Idle blocks are striped; red preemption markers appear at the event's boundary. Start labels and the current end label show the times. Scrolling follows execution; while paused, users can scroll back. Long IDs use ellipsis inside short blocks and a full hover title. Full IDs are text in the CPU, queue, and results.
+
+Metrics and averages come directly from the backend and appear at completion. Averages use two decimals. CPU utilization alone is a display statistic: total non-IDLE Gantt duration / final timeline duration × 100. Process colors remain stable across the CPU border, ready chips, chart borders, and results. Theme colors still use CSS variables; blocked local storage does not break startup or theme switching.
+
+## Automated verification
+
+```sh
+python -m pytest -q
+python engine.py
+node --check static/js/script.js
+node --test tests/test_frontend.cjs
 ```
 
-### Every work session
+Install `requirements-dev.txt` first. Node 18+ runs the frontend tests without npm packages. Set `SRTF_TEST_URL=http://127.0.0.1:5000` with Flask running to include seven live HTTP cases; see shell-specific commands in the README.
 
-```bash
-git checkout frontend
-git pull origin frontend             # get your partner's latest work FIRST
+The Python suite covers API envelopes/errors, size boundaries, process limits, tie-breaking, preemption, idle time, timestamps, metric order, sample compatibility, and frontend asset serving. The Node suite covers validation, mapping, safe rendering, malformed replies, request races, control states, chronological events, proportions, and long playback. Its DOM adapter does not measure real CSS layout or actual browser timer throttling.
 
-# ... work on your own files ...
+## Manual browser checklist
 
-git add .
-git commit -m "Describe what you changed"
-git pull origin frontend             # again, in case your partner pushed meanwhile
-git push origin frontend
+Start Flask, open http://127.0.0.1:5000, and open DevTools Network/Console. Reload between fault-injection cases.
+
+| Check | Procedure and expected result |
+|---|---|
+| Reference | Load Sample → Run. Confirm one POST with four `{pid,arrival,burst}` entries; time 0 is paused, CPU P1, no completions or final metrics. Play at 20×. Expect P1 `[0–1]`, P2 `[1–5]`, P4 `[5–10]`, P1 `[10–17]`, P3 `[17–26]`; averages 6.50 / 13.00 / 4.25. |
+| Tick ordering | Step to t=1: CPU P2, queue P1, preemption marker at 1. P2 completes only at t=5. With A `(0,1)`, B `(1,1)`, completion A precedes arrival B at t=1. |
+| One / five / fifteen | Fill one default row and leave the others unused; Run must succeed. Repeat with five and fifteen populated rows; Add Row disables at 15. Send 16 directly to `/simulate` to verify HTTP 400. |
+| Validation | Try blank/duplicate/IDLE/33-character PIDs, a partial row, negative arrival, zero burst, fractions, and `9007199254740992`. Errors must clear old results. A 32-character custom PID is accepted. |
+| Identity | Delete the middle row; later PIDs stay unchanged. Add another row; its suggestion is unused. Confirm result PIDs and request PIDs match. |
+| All arrive at zero | Enter P2/P10/P1, all `(0,1)`. CPU order must be P1, P10, P2; result table stays in input order. |
+| Equal remaining | P1 `(0,3)`, P2 `(1,2)`: P1 keeps the CPU to t=3 without preemption, then P2 runs to t=5. |
+| Idle | Use P1 `(3,2)`: IDLE `[0–3]`, P1 `[3–5]`; waiting/response 0, utilization 40%. |
+| Playback cancellation | Play then Pause: clock stops. Step advances one. Reset while playing: time 0, initial events only, metrics cleared. Edit an input while playing: display invalidates and stays stopped. |
+| Duplicate/stale requests | With the delayed-fetch snippet below, click Run repeatedly: only one request. Clear, Reset, or Load Sample while pending: old results never reappear. Load Sample then Run again: the new response owns the display. |
+| Backend unavailable | Stop Flask after loading the page, then Run. Expect the connection message and cleared results. Restart Flask afterward. |
+| Non-JSON and size errors | Use the snippets below. Expect readable non-JSON/HTTP 413 errors with no unhandled promise rejection. Reload to restore normal requests. |
+| Safe text | Use `<b>job</b>` as a PID. It must display literally, including in logs and final results. |
+| Responsive/theme | Test widths around 375px, 768px, and 1440px, in both themes. Check controls, PID inputs, labels, table scrolling, and Gantt horizontal scrolling. A 1-unit bar must be exactly one fifth of a 5-unit bar, including borders. |
+| Long run | Use arrival 9999, burst 1. Confirm the UI stays responsive, initial CPU is IDLE, scrolling works, and Pause/Reset/Clear cancel promptly. A full replay at 20× takes about 8 minutes 20 seconds. |
+
+Delayed fetch, deliberately ignoring abort to test stale-response protection (DevTools Console):
+
+```js
+const originalFetch = window.fetch.bind(window);
+window.fetch = (url, options) => new Promise((resolve, reject) => {
+  setTimeout(() => originalFetch(url, { ...options, signal: undefined }).then(resolve, reject), 3000);
+});
 ```
 
-### When the backend developer updates `main`
+Non-JSON error (reload first, run this, then press Run):
 
-When you are told that `main` has new backend changes (for example a new `engine.py` or `app.py`), bring them into your branch:
-
-```bash
-git checkout frontend
-git pull origin frontend
-git merge main
-git push origin frontend
+```js
+window.fetch = async () => new Response('<html>Server error</html>', {
+  status: 500, headers: { 'Content-Type': 'text/html' }
+});
 ```
 
-Do this before you start working that day, so you are building against the latest server.
+HTTP 413 (reload first):
 
-### Rules
-- **Pull before you start. Pull again before you push.**
-- Only edit your own files.
-- Never commit the `.venv` folder.
-- Commit small and often. Push at the end of every work session.
-- If a push is rejected, run `git pull origin frontend` and push again.
-- If a merge conflict appears, do not panic. Ask the backend developer before changing anything.
-- Only the backend developer merges into `main`.
+```js
+window.fetch = async () => new Response(JSON.stringify({ error: 'Request body is too large (maximum 16 KB).' }), {
+  status: 413, headers: { 'Content-Type': 'application/json' }
+});
+```
 
-## 9. Checklist
+Direct API limit check (reload first):
 
-**Frontend B**
-- [ ] Page structure with all ids in place and scripts linked with `/static/...` paths
-- [ ] Input form adds and removes rows, validates, and shows clear messages
-- [ ] Load Sample, Random, and Clear work
-- [ ] Run sends the data and handles both the success and the error response
+```js
+fetch('/simulate', {
+  method: 'POST', headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ processes: Array.from({ length: 16 }, (_, i) => ({ pid: `P${i}`, arrival: 0, burst: 1 })) })
+}).then(async response => console.log(response.status, await response.json()));
+```
 
-**Frontend A**
-- [ ] Gantt chart builds block by block with smooth growth
-- [ ] CPU panel, ready queue, and event log update every step
-- [ ] Preemption is clearly visible
-- [ ] Play, Pause, Step, Reset, and Speed all work
-- [ ] Results table and averages appear after the last step
-- [ ] Colors are consistent across all panels
+## Completion status
 
-**Both**
-- [ ] Works with `static/sample_result.json`
-- [ ] Works with the real backend
-- [ ] Looks fine at different window sizes
-- [ ] A first-time user can run a simulation in under one minute without help
+- [x] Input, request, cancellation, response validation, and safe text rendering
+- [x] Reference workload, playback controls, CPU/queue/log, proportional Gantt, final metrics
+- [x] Backend and lightweight frontend automated regressions, including live HTTP integration
+- [ ] Real-browser visual and interaction checklist above
+- [ ] Final presentation-laptop verification
+
+The audit environment had no connected browser and could not create an in-app browser. Automated DOM-adapter and live HTTP checks cannot substitute for those pending visual checks. Random generation, export, CPU flashes, and continuous sub-tick animation are not implemented; playback advances in whole ticks.

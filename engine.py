@@ -8,7 +8,7 @@ MAX_SIMULATION_STEPS = 10_000
 
 
 class Process(TypedDict):
-    """A validated process with integer arrival and CPU burst times."""
+    # A validated process with integer arrival and CPU burst times.
 
     pid: str
     arrival: int
@@ -16,7 +16,7 @@ class Process(TypedDict):
 
 
 class Event(TypedDict, total=False):
-    """A timeline announcement, with its actual occurrence time in `at`."""
+    # A timeline announcement, with its actual occurrence time in `at`.
 
     type: str
     pid: str | None
@@ -26,7 +26,7 @@ class Event(TypedDict, total=False):
 
 
 class Step(TypedDict):
-    """The CPU, queue, and remaining work at the start of one time unit."""
+    # The CPU, queue, and remaining work at the start of one time unit.
 
     time: int
     running: str
@@ -36,7 +36,7 @@ class Step(TypedDict):
 
 
 class GanttBlock(TypedDict):
-    """A continuous CPU assignment with an exclusive end time."""
+    # A continuous CPU assignment with an exclusive end time.
 
     pid: str
     start: int
@@ -44,7 +44,7 @@ class GanttBlock(TypedDict):
 
 
 class SimulationResult(TypedDict):
-    """The JSON-compatible response shared with the Flask endpoint."""
+    # The JSON-compatible response shared with the Flask endpoint.
 
     steps: list[Step]
     gantt: list[GanttBlock]
@@ -53,7 +53,7 @@ class SimulationResult(TypedDict):
 
 
 def _validate_process(process: object, index: int, seen: set[str]) -> Process:
-    """Validate one process before its fields become dictionary keys or times."""
+    # Validate one process before its fields become dictionary keys or times.
     # Reject malformed entries before accessing their fields.
     if not isinstance(process, dict):
         raise ValueError(f"Process {index} must be a dictionary.")
@@ -90,7 +90,7 @@ def _validate_process(process: object, index: int, seen: set[str]) -> Process:
 
 
 def _validate_processes(processes: object) -> list[Process]:
-    """Validate the collection and return copies of the required input fields."""
+    # Validate the collection and return copies of the required input fields.
     # Reject invalid containers and empty workloads before validating individual rows.
     if not isinstance(processes, list):
         raise ValueError("Processes must be a list.")
@@ -114,7 +114,7 @@ def _record_preemption(
     remaining: dict[str, int],
     time: int,
 ) -> None:
-    """Announce a switch only when the previous process was interrupted."""
+    # Announce a switch only when the previous process was interrupted.
     # The first run or a run after idle time has no previous process to interrupt.
     if running is None:
         return
@@ -140,7 +140,7 @@ def _make_step(
     arrival: dict[str, int],
     events: list[Event],
 ) -> Step:
-    """Capture a tick before execution and order the waiting queue for display."""
+    # Capture a tick before execution and order the waiting queue for display.
     # Exclude the CPU owner; waiting ties use arrival time followed by PID.
     waiting = sorted(
         (pid for pid in ready if pid != current),
@@ -160,7 +160,7 @@ def _make_step(
 def _simulate(
     processes: list[Process],
 ) -> tuple[list[Step], dict[str, int], dict[str, int]]:
-    """Run the clock until every process finishes, recording steps and timings."""
+    # Run the clock until every process finishes, recording steps and timings.
     # Track mutable work separately from the validated input.
     remaining = {process["pid"]: process["burst"] for process in processes}
     arrival = {process["pid"]: process["arrival"] for process in processes}
@@ -234,7 +234,7 @@ def _simulate(
 
 
 def _build_gantt(steps: list[Step]) -> list[GanttBlock]:
-    """Merge neighboring ticks with the same CPU owner, including idle ticks."""
+    # Merge neighboring ticks with the same CPU owner, including idle ticks.
     gantt: list[GanttBlock] = []
     # Process the recorded timeline in chronological order.
     for step in steps:
@@ -257,7 +257,7 @@ def _calculate_metrics(
     first_start: dict[str, int],
     completion: dict[str, int],
 ) -> dict[str, dict[str, int]]:
-    """Calculate each process's finish time, total duration, wait, and response."""
+    # Calculate each process's finish time, total duration, wait, and response.
     metrics: dict[str, dict[str, int]] = {}
     # Original burst times exclude CPU execution from total waiting time.
     for process in processes:
@@ -273,7 +273,7 @@ def _calculate_metrics(
 
 
 def _calculate_averages(metrics: dict[str, dict[str, int]]) -> dict[str, float]:
-    """Average the three duration metrics, with zeros for an empty workload."""
+    # Average the three duration metrics, with zeros for an empty workload.
     count = len(metrics)
     averages: dict[str, float] = {}
     # Round only the final averages, preserving each process's exact metrics.
@@ -285,7 +285,7 @@ def _calculate_averages(metrics: dict[str, dict[str, int]]) -> dict[str, float]:
 
 
 def srtf(processes: object) -> SimulationResult:
-    """Return the SRTF timeline and metrics; raise ValueError for invalid input."""
+    # Return the SRTF timeline and metrics; raise ValueError for invalid input.
     # Validate once, then keep scheduling and result calculations independent.
     validated = _validate_processes(processes)
     steps, first_start, completion = _simulate(validated)
@@ -301,7 +301,7 @@ def srtf(processes: object) -> SimulationResult:
 
 
 def _run_self_checks() -> None:
-    """Run the sample and regression checks only when this file is executed."""
+    # Run the sample and regression checks only when this file is executed.
     import json
     from pathlib import Path
 
