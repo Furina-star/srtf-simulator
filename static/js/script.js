@@ -1,4 +1,4 @@
-﻿/* Validate inputs and replay the Python timeline without scheduling locally. */
+/* Validate inputs and replay the Python timeline without scheduling locally. */
 "use strict";
 const $ = id => document.getElementById(id);
 const state = {
@@ -25,12 +25,13 @@ function init() {
   for (const [id, handler] of Object.entries({
     addRowBtn: () => addRow(), runBtn: runSRTF, clearBtn: clearAll,
     resetBtn: resetPlayback, sampleBtn: loadSample, themeBtn: toggleTheme,
-    playBtn: play, pauseBtn: pause, stepBtn: advance
+    playBtn: play, pauseBtn: pause, stepBtn: advance, endBtn: jumpToEnd
   })) $(id).addEventListener("click", handler);
   $("speed").addEventListener("input", () => {
     $("speedValue").textContent = `${$("speed").value}×`;
     if (state.playing) scheduleTick();
   });
+  $("timelineSeek").addEventListener("input", () => seekToTime(Number($("timelineSeek").value)));
   $("processRows").addEventListener("input", invalidate);
   for (let i = 0; i < 5; i++) addRow();
   invalidate();
@@ -55,7 +56,7 @@ function addRow(pid, arrival = "", burst = "") {
     // Text inputs retain malformed numeric text, so it cannot become a skipped blank row.
     input.type = "text";
     input.value = value;
-    input.setAttribute("aria-label", label);
+    input.setAttribute("aria-label", `${label}, row ${container.children.length + 1}`);
     if (className !== "pid-input") input.inputMode = "numeric";
     input.placeholder = className === "at-input" ? "0" : className === "bt-input" ? "5" : "PID";
     row.append(input);
@@ -63,10 +64,20 @@ function addRow(pid, arrival = "", burst = "") {
   const remove = element("button", "row-del-btn", "×");
   remove.title = "Remove process";
   remove.setAttribute("aria-label", "Remove process");
-  remove.addEventListener("click", () => { row.remove(); invalidate(); });
+  remove.addEventListener("click", () => { row.remove(); updateRowLabels(); invalidate(); });
   row.append(remove);
   container.append(row);
+  updateRowLabels();
   updateControls();
+}
+
+// Give repeated fields a distinct accessible name after add/remove.
+function updateRowLabels() {
+  for (const [index, row] of Array.from($("processRows").children).entries()) {
+    for (const [selector, name] of [[".pid-input", "Process ID"], [".at-input", "Arrival time"], [".bt-input", "Burst time"]]) {
+      row.querySelector(selector).setAttribute("aria-label", `${name}, row ${index + 1}`);
+    }
+  }
 }
 
 // Ignore unused rows with both time fields blank; validate every partial row.
@@ -110,9 +121,37 @@ function loadSample() {
   SAMPLE.forEach(p => addRow(p.pid, p.arrival, p.burst));
 }
 
+// Clear inline field errors when an input changes or the user starts over.
+function clearFieldErrors() {
+  for (const row of $("processRows").children) {
+    for (const selector of [".pid-input", ".at-input", ".bt-input"]) {
+      const input = row.querySelector(selector);
+      input.className = input.className.replace(/\s*field-error\b/g, "");
+      input.setAttribute("aria-invalid", "false");
+    }
+  }
+}
+
+// Identify the exact invalid field without replacing its original error message.
+function highlightInvalidField(message) {
+  clearFieldErrors();
+  const match = /^Row (\d+):/.exec(message);
+  if (!match) return;
+  const row = $("processRows").children[Number(match[1]) - 1];
+  if (!row) return;
+  const selector = /PID|Duplicate/.test(message) ? ".pid-input"
+    : /Arrival/.test(message) ? ".at-input" : /Burst/.test(message) ? ".bt-input" : null;
+  if (!selector) return;
+  const input = row.querySelector(selector);
+  input.className += " field-error";
+  input.setAttribute("aria-invalid", "true");
+  if (typeof input.focus === "function") input.focus();
+}
+
 // Version checks also reject responses arriving after an abort or newer request.
 function invalidate() {
   pause();
+  clearFieldErrors();
   state.version++;
   if (state.controller) state.controller.abort();
   state.controller = null;
@@ -129,6 +168,7 @@ function clearDisplay() {
   for (const id of ["avgWT", "avgTAT", "avgRT", "cpuUtil", "timelineInfo", "cpuState", "remainingWork"]) $(id).textContent = "—";
   $("currentTime").textContent = "0";
   $("cpuState").style.borderColor = "";
+  $("cpuState").className = "";
   $("readyQueue").replaceChildren(element("span", "chart-placeholder", "No waiting processes."));
   const row = element("tr");
   const cell = element("td", "table-empty", "Final results appear when playback finishes.");
@@ -218,6 +258,7 @@ async function runSRTF() {
     state.processes = [];
     clearDisplay();
     $("error").textContent = error.message;
+    highlightInvalidField(error.message);
     $("statusText").textContent = "Simulation failed. Check the inputs or server and run again.";
   } finally {
     if (version === state.version) { state.controller = null; updateControls(); }
@@ -235,7 +276,14 @@ function updateControls() {
   $("speed").disabled = !playable;
   $("addRowBtn").disabled = $("processRows").children.length >= 15;
   $("clearBtn").disabled = $("processRows").children.length === 0 && !pending && !state.result;
-  $("processCount").textContent = `${$("processRows").children.length}/15 rows`;
+  const rows = Array.from($("processRows").children);
+  const active = rows.filter(row => row.querySelector(".at-input").value.trim() || row.querySelector(".bt-input").value.trim()).length;
+  $("processCount").textContent = `${active} active · ${rows.length}/15 rows`;
+  $("endBtn").disabled = !state.result || state.time >= state.result.steps.length;
+  $("timelineSeek").disabled = !state.result;
+  $("timelineSeek").max = state.result ? String(state.result.steps.length) : "0";
+  $("timelineSeek").value = String(state.time);
+  $("timelineProgress").textContent = `${state.time} / ${state.result ? state.result.steps.length : 0}`;
 }
 
 // Only one timer is outstanding; speed changes replace it and pause cancels it.
@@ -274,21 +322,31 @@ function resetPlayback() {
   updateControls();
 }
 
-// Show start events once; completions in this step stay hidden until its end.
-function prepareStep() {
+// Paint the current backend snapshot without duplicating earlier log events.
+function renderSnapshot() {
   const step = state.result.steps[state.time];
+  const arriving = new Set(step.events.filter(event => event.type === "arrival").map(event => event.pid));
   $("currentTime").textContent = step.time;
-  $("cpuState").textContent = step.running;
-  $("cpuState").style.borderColor = state.colors.get(step.running) || "var(--muted)";
+  const cpu = $("cpuState");
+  cpu.textContent = step.running;
+  cpu.className = step.events.some(event => event.type === "preempt") ? "cpu-preempt-flash"
+    : arriving.has(step.running) ? "cpu-arrival-flash" : "";
+  cpu.style.borderColor = state.colors.get(step.running) || "var(--muted)";
   $("remainingWork").textContent = step.running === "IDLE" ? "No process running" : `${step.remaining[step.running]} units remaining`;
   $("readyQueue").replaceChildren(...step.ready.map(pid => {
-    const chip = element("span", "queue-chip", `${pid} · ${step.remaining[pid]} left`);
+    const chip = element("span", arriving.has(pid) ? "queue-chip new-arrival" : "queue-chip", `${pid} · ${step.remaining[pid]} left`);
     chip.style.borderColor = state.colors.get(pid);
     return chip;
   }));
   if (!step.ready.length) $("readyQueue").append(element("span", "chart-placeholder", "No waiting processes."));
-  appendEvents(step.events.filter(event => event.at === step.time));
   $("statusText").textContent = state.playing ? "Playing simulation." : "Ready. Play or step forward to continue.";
+}
+
+// Show start events once; completions in this step stay hidden until its end.
+function prepareStep() {
+  renderSnapshot();
+  const step = state.result.steps[state.time];
+  appendEvents(step.events.filter(event => event.at === step.time));
 }
 
 // Finish the previous tick before showing the next tick's arrivals at the same time.
@@ -300,23 +358,39 @@ function advance() {
   renderGantt();
   appendEvents(step.events.filter(event => event.at === state.time));
   if (state.time < state.result.steps.length) prepareStep();
-  else {
-    pause();
-    $("cpuState").textContent = "Complete";
-    $("remainingWork").textContent = "All processes finished";
-    $("readyQueue").replaceChildren(element("span", "chart-placeholder", "No waiting processes."));
-    renderResults();
-    $("statusText").textContent = `Simulation complete · ${state.processes.length} processes scheduled`;
-  }
+  else showCompletedState();
   updateControls();
+}
+
+// Final metrics appear only when the timeline reaches the last boundary.
+function showCompletedState() {
+  pause();
+  $("cpuState").className = "";
+  $("cpuState").textContent = "Complete";
+  $("remainingWork").textContent = "All processes finished";
+  $("readyQueue").replaceChildren(element("span", "chart-placeholder", "No waiting processes."));
+  renderResults();
+  $("statusText").textContent = `Simulation complete · ${state.processes.length} processes scheduled`;
 }
 
 function appendEvents(events) {
   const container = $("logContainer");
   if (container.classList.contains("empty-log")) { container.replaceChildren(); container.className = "log-container"; }
   for (const event of events) {
+    const last = container.children[container.children.length - 1];
+    // Adjacent idle ticks share one visible interval; original events are untouched.
+    if (event.type === "idle" && last && last.dataset.idleEnd === String(event.at)) {
+      last.dataset.idleEnd = String(event.at + 1);
+      last.children[0].textContent = `t = ${last.dataset.idleStart}–${event.at + 1}`;
+      last.children[1].textContent = `CPU idle from t=${last.dataset.idleStart} to t=${event.at + 1}`;
+      continue;
+    }
     const row = element("div", `log-item event-${event.type}`);
     row.append(element("span", "log-time", `t = ${event.at}`), element("span", "log-msg", event.text));
+    if (event.type === "idle") {
+      row.dataset.idleStart = String(event.at);
+      row.dataset.idleEnd = String(event.at + 1);
+    }
     container.append(row);
   }
   container.scrollTop = container.scrollHeight;
@@ -353,6 +427,34 @@ function renderGantt() {
   chart.replaceChildren(track);
   chart.scrollLeft = chart.scrollWidth;
   $("timelineInfo").textContent = `0–${state.time} / ${state.result.steps.length} units`;
+}
+
+// Reconstruct one selected playback boundary directly from backend events.
+function seekToTime(target) {
+  if (!state.result || !Number.isFinite(target)) return;
+  pause();
+  const total = state.result.steps.length;
+  const boundary = Math.max(0, Math.min(total, Math.trunc(target)));
+  clearDisplay();
+  state.time = boundary;
+  $("currentTime").textContent = String(boundary);
+  const events = [];
+  for (let time = 0; time <= boundary; time++) {
+    if (time > 0) events.push(...state.result.steps[time - 1].events.filter(event => event.at === time));
+    if (time < total) events.push(...state.result.steps[time].events.filter(event => event.at === time));
+  }
+  appendEvents(events);
+  if (boundary > 0) renderGantt();
+  if (boundary < total) {
+    renderSnapshot();
+    $("statusText").textContent = `At t=${boundary}. Play or step forward to continue.`;
+  } else showCompletedState();
+  updateControls();
+}
+
+// Jump to the final result without creating thousands of timer callbacks.
+function jumpToEnd() {
+  if (state.result) seekToTime(state.result.steps.length);
 }
 
 function renderResults() {

@@ -215,3 +215,17 @@ button:disabled,input:disabled{opacity:.45;cursor:not-allowed;transform:none}
 .event-preempt{border-left:3px solid var(--danger)}
 .log-msg,td:first-child{overflow-wrap:anywhere}
 @media(max-width:600px){.simulation-state{grid-template-columns:70px 1fr}.simulation-state>div:last-child{grid-column:1/-1}.playback-controls label{margin-left:0}}
+
+/* SRTF frontend polish: timeline, validation, and state transitions. */
+.timeline-navigation{display:flex;align-items:center;gap:12px;padding:5px 2px 16px}
+.timeline-navigation label{min-width:125px;display:flex;justify-content:space-between;align-items:center;white-space:nowrap}
+.timeline-navigation output{color:var(--mint-dark);font-weight:800}
+.timeline-navigation input{flex:1;min-width:40px;accent-color:var(--mint)}
+.process-input-row input.field-error{border-color:var(--danger);box-shadow:0 0 0 2px rgba(217,87,87,.15)}
+@keyframes srtf-cpu-pulse{0%{background:var(--mint-soft)}100%{background:transparent}}
+@keyframes srtf-preempt-pulse{0%{background:rgba(217,87,87,.24)}100%{background:transparent}}
+.cpu-arrival-flash{animation:srtf-cpu-pulse .8s ease-out}
+.cpu-preempt-flash{animation:srtf-preempt-pulse .8s ease-out}
+.queue-chip.new-arrival{animation:srtf-cpu-pulse .8s ease-out;font-weight:700}
+@media(max-width:600px){.timeline-navigation{flex-wrap:wrap}.timeline-navigation input{flex-basis:100%}}
+@media(prefers-reduced-motion:reduce){.cpu-arrival-flash,.cpu-preempt-flash,.queue-chip.new-arrival{animation:none}*,*::before,*::after{scroll-behavior:auto!important}}
