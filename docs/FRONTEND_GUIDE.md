@@ -1,4 +1,4 @@
-﻿# Frontend Guide
+# Frontend Guide
 
 The frontend **replays Python results**. `engine.py` owns scheduling and process metrics; `app.py` owns Flask routing and the JSON API. Do not add a JavaScript scheduler or recalculate completion, waiting, turnaround, or response times.
 
@@ -20,7 +20,7 @@ HTTP 400/413 error messages are displayed as text. Other HTTP failures, invalid/
 
 ## Inputs and state
 
-- Five default rows suggest P1–P5. Both numeric fields blank means an unused row; one blank numeric field means a validation error. The badge counts visible rows, not submitted processes.
+- Five default rows suggest P1–P5. Both numeric fields blank means an unused row; one blank numeric field means a validation error. The badge separately shows populated rows and all visible rows.
 - Accept 1–15 populated rows. The Add Row control stops at 15 visible rows.
 - PIDs are editable, trimmed, case-sensitive, unique, and 1–32 Unicode characters. Exact uppercase `IDLE` is reserved. Delete/add never renames unrelated rows.
 - Arrival uses nonnegative decimal integer text; burst uses positive decimal integer text. Reject fractions, exponent/hex notation, non-finite values, and unsafe JavaScript integers. Text inputs preserve malformed input for validation instead of letting number-input sanitization turn it into an unused row.
@@ -39,6 +39,8 @@ PIDs, event text, and API errors use `textContent` and DOM elements, never inter
 | Play | Starts one recurring timeout. Disabled before a result or after completion. |
 | Pause | Cancels the outstanding timeout and preserves the boundary snapshot. |
 | Step Forward | Completes exactly one unit while paused. Disabled during playback. |
+| Jump to End | Reconstructs the last boundary and reveals all final results immediately. |
+| Timeline slider | Seeks to a selected boundary, reconstructing visible state and chronological events without a new request. |
 | Reset | Stops the timer, clears later chart/log/metrics, and rewinds the saved result to time 0 with its initial snapshot/start events. Inputs remain. While fetching, cancels the request and requires Run again. |
 | Speed | 1–20 ticks/second. Replaces the next timeout immediately during playback. |
 | Clear / Load Sample / input edits | Cancel requests and playback, discard the result, and require another Run. |
@@ -53,7 +55,7 @@ At boundary `t`, the CPU shows `steps[t].running`, the queue uses `steps[t].read
 
 This preserves completion-before-arrival ordering at a shared timestamp. A completion is never displayed merely because it exists in the current step. Pausing/resuming does not replay start events. Reset deliberately clears the old log before replaying time 0.
 
-Only one timeout is pending, including for a 10,000-tick result. Each callback handles one tick and yields to the browser; speed changes, resets, and edits cancel that timer. The log appends new events without rebuilding its history.
+Only one timeout is pending, including for a 10,000-tick result. Each callback handles one tick and yields to the browser; speed changes, resets, and edits cancel that timer. The log appends new events without rebuilding its history during normal playback. Adjacent idle announcements collapse into one visible interval without modifying backend events. Seeking rebuilds the display once for the chosen boundary.
 
 ## Gantt and results
 
@@ -75,6 +77,8 @@ node --test tests/test_frontend.cjs
 Install `requirements-dev.txt` first. Node 18+ runs the frontend tests without npm packages. Set `SRTF_TEST_URL=http://127.0.0.1:5000` with Flask running to include seven live HTTP cases; see shell-specific commands in the README.
 
 The Python suite covers API envelopes/errors, size boundaries, process limits, tie-breaking, preemption, idle time, timestamps, metric order, sample compatibility, and frontend asset serving. The Node suite covers validation, mapping, safe rendering, malformed replies, request races, control states, chronological events, proportions, and long playback. Its DOM adapter does not measure real CSS layout or actual browser timer throttling.
+
+Field-level validation visually highlights the invalid input and uses row-specific accessible labels. CPU arrivals and preemptions receive brief highlights, which are suppressed for reduced-motion users.
 
 ## Manual browser checklist
 

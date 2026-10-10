@@ -1,4 +1,4 @@
-﻿/* Dependency-free integration tests for the browser script with a small DOM/timer adapter. */
+/* Dependency-free integration tests for the browser script with a small DOM/timer adapter. */
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -295,7 +295,12 @@ for (const [name, processes] of [
   assert.equal(e.nodes.error.textContent, ''); assert.ok(e.run('state.result'));
   e.run('play()'); while (e.timers.size) e.tick();
   assert.deepEqual(e.nodes.gantt.firstChild.children.map(n => [n.firstChild.textContent, n.style.left, n.style.width]), responseData.gantt.map(b => [b.pid, `${b.start * 48}px`, `${(b.end - b.start) * 48}px`]));
-  assert.deepEqual(e.nodes.logContainer.children.map(n => n.textContent), responseData.steps.flatMap(s => s.events).map(event => `t = ${event.at}${event.text}`));
+  // Compare chronological non-idle events; adjacent idle announcements are compacted.
+   const actual = e.nodes.logContainer.children.map(n => n.textContent);
+   const expected = responseData.steps.flatMap(s => s.events).filter(event => event.type !== 'idle').map(event => `t = ${event.at}${event.text}`);
+   assert.deepEqual(actual.filter(line => !line.includes('CPU idle')), expected);
+   const idleCount = responseData.steps.flatMap(s => s.events).filter(event => event.type === 'idle').length;
+   assert.equal(actual.filter(line => line.includes('CPU idle')).length, idleCount ? 1 : 0);
   assert.equal(e.nodes.avgWT.textContent, responseData.averages.waiting.toFixed(2));
   if (name === 'reference') assert.deepEqual(responseData, fixture);
 });
@@ -315,7 +320,9 @@ test('ten-thousand-tick playback stays cancellable with one timer', async () => 
   for (let i = 0; i < 10000; i++) { assert.equal(e.timers.size, 1); e.tick(); }
   assert.equal(e.timers.size, 0); assert.equal(e.nodes.currentTime.textContent, '10000');
   assert.equal(e.nodes.gantt.firstChild.children[0].style.width, `${9999 * 48}px`);
-  assert.equal(e.nodes.logContainer.children.length, 10001);
+  // All consecutive idle ticks are represented by a single visible interval.
+  assert.equal(e.nodes.logContainer.children.length, 3);
+  assert.match(e.nodes.logContainer.firstChild.textContent, /CPU idle from t=0 to t=9999/);
   e.run('resetPlayback(); play(); clearAll()'); assert.equal(e.timers.size, 0);
 });
 
@@ -352,4 +359,48 @@ test('preemption marker appears at the start boundary, before the new interval e
   const marker = e.nodes.gantt.firstChild.children.at(-1);
   assert.ok(marker.classList.contains('preemption-marker')); assert.equal(marker.style.left, '48px');
   assert.equal(e.nodes.gantt.firstChild.children[0].style.width, '48px');
+});
+
+// Timeline navigation reconstructs prior event boundaries without replaying timers.
+test('seek slider and Jump to End show exact backend state without extra requests', async () => {
+  const e = setup(); let calls = 0;
+  e.context.fetch = async () => { calls++; return { ok: true, status: 200, json: async () => fixture }; };
+  await reference(e);
+  e.run('play()'); assert.equal(e.timers.size, 1);
+  e.nodes.timelineSeek.value = '6'; e.nodes.timelineSeek.dispatch('input');
+  assert.equal(e.timers.size, 0);
+  assert.equal(e.nodes.currentTime.textContent, '6');
+  assert.equal(e.nodes.cpuState.textContent, 'P4');
+  assert.equal(e.nodes.timelineProgress.textContent, '6 / 26');
+  assert.equal(e.nodes.avgWT.textContent, '—');
+  assert.equal(calls, 1);
+  e.run('jumpToEnd()');
+  assert.equal(e.nodes.currentTime.textContent, '26');
+  assert.equal(e.nodes.avgWT.textContent, '6.50');
+  assert.ok(e.nodes.endBtn.disabled);
+  e.run('seekToTime(1)');
+  assert.equal(e.nodes.cpuState.textContent, 'P2');
+  assert.equal(e.nodes.avgWT.textContent, '—');
+  assert.equal(e.nodes.logContainer.children.filter(n => n.textContent.includes('completed')).length, 0);
+  assert.equal(calls, 1);
+});
+
+test('inline validation highlights the offending field and clears after edits', async () => {
+  const e = setup();
+  fillRow(e, 'P1', '-1', '2');
+  await e.run('runSRTF()');
+  const field = e.nodes.processRows.firstChild.querySelector('.at-input');
+  assert.match(field.className, /field-error/);
+  assert.equal(field['aria-invalid'], 'true');
+  field.value = '0'; field.dispatch('input');
+  assert.doesNotMatch(field.className, /field-error/);
+  assert.equal(field['aria-invalid'], 'false');
+});
+
+test('active process badge counts populated input rows instead of blanks', () => {
+  const e = setup();
+  assert.match(e.nodes.processCount.textContent, /^0 active/);
+  fillRow(e, 'P1', '0', '1');
+  e.nodes.processRows.firstChild.querySelector('.at-input').dispatch('input');
+  assert.match(e.nodes.processCount.textContent, /^1 active/);
 });

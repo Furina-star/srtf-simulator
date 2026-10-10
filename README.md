@@ -1,4 +1,4 @@
-﻿# SRTF Scheduler Simulator
+# SRTF Scheduler Simulator
 
 An Operating Systems learning project that computes **Shortest Remaining Time First (SRTF)** schedules in Python and replays them in a browser. Flask serves the page and the stateless JSON API. The frontend displays backend results; it does not calculate scheduling decisions or process metrics.
 
@@ -65,7 +65,7 @@ For development, `python -m pip install -r requirements-dev.txt` installs Flask 
 
 ## Using the simulator
 
-Five unused rows start with editable P1–P5 suggestions. Fill any 1–15 rows, or load the four-process sample. Rows with **both time fields blank** are ignored; a row with only one time is invalid. The count badge counts visible rows, including unused ones. Add Row suggests an unused PID. Removing a row never renames the others.
+Five unused rows start with editable P1–P5 suggestions. Fill any 1–15 rows, or load the four-process sample. Rows with **both time fields blank** are ignored; a row with only one time is invalid. The badge separately displays the number of active rows and all visible rows. Add Row suggests an unused PID. Removing a row never renames the others.
 
 PIDs are trimmed, case-sensitive, unique, and 1–32 Unicode characters. `IDLE` is reserved. Arrival must be a nonnegative integer and burst a positive integer. Numeric inputs use decimal digits; fractions, exponent notation, non-finite values, and integers outside JavaScript's safe range are rejected. The server remains authoritative for the 10,000-unit timeline limit, including idle time, and the 16 KiB request limit.
 
@@ -75,6 +75,8 @@ PIDs are trimmed, case-sensitive, unique, and 1–32 Unicode characters. `IDLE` 
 | Play | Advances one simulation unit per timer tick. |
 | Pause | Cancels the timer and keeps the current time. |
 | Step Forward | While paused, completes one unit and displays the next boundary. |
+| Jump to End | Immediately displays the final chart, events, and metrics without timed playback. |
+| Timeline slider | Seeks to a selected boundary, reconstructing CPU state, log, and completed work from the Python response. |
 | Reset | Stops playback and rewinds the same result to time 0, clearing final metrics and later events. During a request, cancels it; Run is then required. Keeps inputs. |
 | Playback Speed | 1–20 units per second; changes the next timer delay immediately. |
 | Clear all | Cancels requests/playback and removes all rows and results. |
@@ -83,6 +85,8 @@ PIDs are trimmed, case-sensitive, unique, and 1–32 Unicode characters. `IDLE` 
 | Theme button | Toggles light/dark mode; remembers it when browser storage is available. |
 
 The CPU and ready queue show `steps` snapshots and their remaining work. Arrivals/preemptions appear at tick start; completions appear at tick end, before arrivals at the same boundary. Final metrics and averages appear only after the last tick. CPU utilization is busy Gantt duration divided by total timeline duration.
+
+Consecutive idle events are collapsed into one visible interval in the log; the backend event data stays unchanged. Invalid fields are highlighted and CPU arrivals/preemptions receive brief visual emphasis (except when reduced motion is requested).
 
 The Gantt chart uses 48 pixels per time unit, labels interval boundaries, marks preemptions in red, and stripes idle blocks. It scrolls horizontally and follows playback. Long PIDs are shortened visually within blocks; hover for the full PID and interval. Full PIDs remain visible in the CPU/queue/results.
 
@@ -160,4 +164,4 @@ Python files use a descriptive module docstring at the top and concise comments 
 - [x] Visual checks across browsers, small screens, and the presentation laptop
 - [ ] Written academic report, user manual with screenshots, and presentation slides
 
-The model assumes known CPU bursts, with no multicore or I/O scheduling. Long jobs can starve; the simulator does not prevent starvation. Workloads are limited to 15 processes and 10,000 time units. Long runs need horizontal scrolling and can take several minutes even at maximum playback speed. Timers may slow in background tabs without changing event order. Random workload generation and export are not implemented.
+The model assumes known CPU bursts, with no multicore or I/O scheduling. Long jobs can starve; the simulator does not prevent starvation. Workloads are limited to 15 processes and 10,000 time units. Long runs need horizontal scrolling and can take several minutes at maximum playback speed unless the user jumps or seeks directly. Timers may slow in background tabs without changing event order. Random workload generation and export are not implemented.
