@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SRTF Scheduler</title>
+  <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <div class="brand">
+        <div class="brand-mark">S</div>
+        <div>
+          <h1>SRTF Scheduler</h1>
+          <p>Shortest Remaining Time First • CPU Scheduling Simulator</p>
+        </div>
+      </div>
+      <button id="themeBtn" class="icon-btn" title="Toggle theme" aria-label="Toggle theme">☾</button>
+    </header>
+
+    <main>
+      <section class="hero">
+        <div>
+          <span class="eyebrow">PREEMPTIVE CPU SCHEDULING</span>
+          <h2>Visualize your <span>Shortest Remaining Time First</span> schedule.</h2>
+          <p>Enter processes directly into the grid, run the animated simulation, and view the Gantt chart, step-by-step logs, and metrics.</p>
+        </div>
+        <div class="hero-badge">
+          <span class="pulse"></span>
+          Ready to simulate
+        </div>
+      </section>
+
+      <section class="workspace">
+        <aside class="panel input-panel">
+          <div class="panel-head">
+            <div>
+              <h3>Process Input</h3>
+              <p>Enter arrival and burst times for your processes below.</p>
+            </div>
+            <span class="count-badge" id="processCount">5</span>
+          </div>
+
+          <!-- Multi-Row Process Input Container -->
+          <div class="process-grid-header">
+            <span>PID</span>
+            <span>Arrival Time</span>
+            <span>Burst Time</span>
+            <span></span>
+          </div>
+
+          <div id="processRows" class="process-rows-container">
+            <!-- 5 empty rows inserted automatically by JS (A, B, C, D, E) -->
+          </div>
+
+          <div class="table-actions">
+            <button id="addRowBtn" class="secondary-btn">＋ Add Row</button>
+            <button id="clearBtn" class="text-btn">Clear all</button>
+          </div>
+
+          <div id="error" class="error"></div>
+
+          <div class="quick-actions">
+            <button id="sampleBtn" class="secondary-btn">Load Sample</button>
+            <button id="runBtn" class="primary-btn">▶ Run SRTF</button>
+          </div>
+        </aside>
+
+        <section class="panel result-panel">
+          <div class="panel-head">
+            <div>
+              <h3>Simulation Results</h3>
+              <p id="statusText">Run the scheduler to generate results.</p>
+            </div>
+            <button id="resetBtn" class="ghost-btn">↻ Reset</button>
+          </div>
+
+          <div class="metrics">
+            <div class="metric">
+              <span>Average Waiting</span>
+              <strong id="avgWT">—</strong>
+              <small>WT</small>
+            </div>
+            <div class="metric">
+              <span>Average Turnaround</span>
+              <strong id="avgTAT">—</strong>
+              <small>TAT</small>
+            </div>
+            <div class="metric">
+              <span>Average Response</span>
+              <strong id="avgRT">—</strong>
+              <small>RT</small>
+            </div>
+            <div class="metric">
+              <span>CPU Utilization</span>
+              <strong id="cpuUtil">—</strong>
+              <small>Busy time</small>
+            </div>
+          </div>
+
+          <div class="section-block">
+            <div class="section-title">
+              <div>
+                <h4>Gantt Chart</h4>
+                <span>Execution timeline with preemptions</span>
+              </div>
+              <span id="timelineInfo" class="mini-pill">—</span>
+            </div>
+            <div id="gantt" class="gantt empty-chart">
+              <div class="chart-placeholder">Your execution timeline will appear here.</div>
+            </div>
+          </div>
+
+          <!-- Execution Logs Section -->
+          <div class="section-block">
+            <div class="section-title">
+              <div>
+                <h4>Execution Logs</h4>
+                <span>Step-by-step CPU decision trace at each time unit</span>
+              </div>
+            </div>
+            <div id="logContainer" class="log-container empty-log">
+              <div class="chart-placeholder">Run the simulation to view step-by-step decision logs.</div>
+            </div>
+          </div>
+
+          <div class="section-block">
+            <div class="section-title">
+              <div>
+                <h4>Process Results</h4>
+                <span>Completion, turnaround, waiting, and response time</span>
+              </div>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Process</th>
+                    <th>AT</th>
+                    <th>BT</th>
+                    <th>CT</th>
+                    <th>TAT</th>
+                    <th>WT</th>
+                    <th>RT</th>
+                  </tr>
+                </thead>
+                <tbody id="resultsBody">
+                  <tr><td colspan="7" class="table-empty">No results yet.</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="formula-card">
+            <div class="formula-icon">i</div>
+            <div>
+              <strong>SRTF rule</strong>
+              <p>At every time unit, the ready process with the <b>shortest remaining burst time</b> gets the CPU. A newly arrived process can preempt the current process.</p>
+            </div>
+          </div>
+        </section>
+      </section>
+    </main>
+
+    <footer>
+      <span>SRTF Scheduling Simulator</span>
+      <span>Built for learning • Preemptive scheduling</span>
+    </footer>
+  </div>
+  <script src="/static/js/script.js"></script>
+</body>
+</html>
